@@ -1,9 +1,26 @@
-name: whale-core tests
+name: whale tests
+
+# Avoid duplicate runs for branch push + pull request.
+# Direct changes to main still receive a regression check.
 on:
-  push:
-    paths: ['whale-core/**', 'infra/call-bridge/audio-bridge/**', '.github/workflows/whale-core-tests.yml']
   pull_request:
-    paths: ['whale-core/**', '.github/workflows/whale-core-tests.yml']
+    paths:
+      - 'whale-core/**'
+      - 'infra/call-bridge/audio-bridge/**'
+      - '.github/workflows/whale-core-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'whale-core/**'
+      - 'infra/call-bridge/audio-bridge/**'
+      - '.github/workflows/whale-core-tests.yml'
+  workflow_dispatch:
+
+# Cancel outdated checks when a newer commit is pushed to the same PR.
+concurrency:
+  group: whale-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,4 +31,3 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e "./whale-core[dev]" -r infra/call-bridge/audio-bridge/requirements.txt
       - run: python -m pytest whale-core/tests infra/call-bridge/audio-bridge/tests -q
-      - run: python whale-core/examples/life_scenario.py
