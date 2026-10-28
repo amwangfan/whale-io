@@ -30,3 +30,6 @@ uv run pytest -q
 
 ## 延迟
 Omni 直接音频流回应；文本转写异步写入持久记忆，DeepSeek 在另一条请求链进行深度对话。测量首字音延迟、端到端回合时延、记忆队列丢弃率，并避免在回调线程调用数据库或文本 LLM。
+
+## 相关方案
+云端多模型编排（四档模型路由、记忆单写者同步、聊天记录备份与恢复、通知频控、人格维持、语义边界）见 [cloud-model-orchestration.md](cloud-model-orchestration.md)。

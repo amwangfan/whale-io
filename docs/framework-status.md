@@ -30,6 +30,8 @@
 2. VoIP：本机 / USB reverse 跑通 `BRIDGE_MODE=omni`；需要工具时 `BRIDGE_TOOLS=1`
 3. 手机雷鸟 iO：保持云推送轮询契约；无眼镜时只验 approve/receipt，不声称镜片必显
 
+完整方案与 P0 验收表见 [cloud-model-orchestration.md](cloud-model-orchestration.md)（模型四档路由、记忆单写者同步、聊天记录备份/恢复、频控反馈调权、语义三道门）。
+
 ### P1（硬件到了再开）
 
 1. 眼镜：通知 / HUD 卡片真显、互动提示
