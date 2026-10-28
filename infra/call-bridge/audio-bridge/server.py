@@ -18,6 +18,7 @@ import math
 import os
 import socket
 import hmac
+from uuid import uuid4
 import struct
 import sys
 import threading
@@ -325,6 +326,9 @@ def handle_echo(conn, addr, capture_dir: Path, echo: bool, beep: bool) -> None:
             pass
         if capture_fp:
             capture_fp.close()
+        if transcript_recorder is not None:
+            transcript_recorder.close()
+            _memory_store.close()
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
@@ -337,6 +341,24 @@ def handle_agent(conn, addr, capture_dir: Path, beep: bool) -> None:
     stop = threading.Event()
     playing = threading.Event()
     vad = EnergyVAD()
+    # Optional nonblocking memory relay. No DeepSeek/SQLite work on Omni callback thread.
+    transcript_recorder = None
+    call_session_id = uuid4().hex
+    memory_path = os.environ.get("WHALE_MEMORY_DB", "").strip()
+    if memory_path:
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _core_src = _Path(__file__).resolve().parents[3] / "whale-core" / "src"
+            if _core_src.is_dir() and str(_core_src) not in _sys.path:
+                _sys.path.insert(0, str(_core_src))
+            from whale_core.memory.sqlite_store import SqliteMemoryStore
+            from whale_core.core.companion import RealtimeTranscriptRecorder
+            _memory_store = SqliteMemoryStore(memory_path)
+            transcript_recorder = RealtimeTranscriptRecorder(_memory_store)
+        except Exception as ex:
+            print(f"[omni] memory relay unavailable: {type(ex).__name__}", flush=True)
+            transcript_recorder = None
     sys_prompt = SYSTEM_PROMPT
     if tools_enabled():
         sys_prompt = SYSTEM_PROMPT.rstrip() + " " + tools_instructions_addon()
@@ -723,9 +745,14 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
             still handle paraphrases that miss the keyword list.
             """
             nonlocal sess
+            t = ev.get("type") or ""
+            if transcript_recorder is not None:
+                if t == "conversation.item.input_audio_transcription.completed":
+                    transcript_recorder.offer(call_session_id, "user", str(ev.get("transcript") or ""))
+                elif t == "response.audio_transcript.done":
+                    transcript_recorder.offer(call_session_id, "assistant", str(ev.get("transcript") or ""))
             if not use_tools or sess is None:
                 return
-            t = ev.get("type") or ""
             if t != "conversation.item.input_audio_transcription.completed":
                 return
             user_tx = (ev.get("transcript") or "").strip()
@@ -781,7 +808,7 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
                 instructions=omni_instructions,
                 tools=TOOL_SCHEMAS if use_tools else None,
                 on_audio=enqueue_audio,
-                on_event=on_omni_event if use_tools else None,
+                on_event=on_omni_event,
                 on_function_call=handle_omni_function_call if use_tools else None,
                 log=lambda m: print(m if m.startswith("[omni]") else f"[omni {peer}] {m}", flush=True),
             )

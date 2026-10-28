@@ -76,6 +76,14 @@ BRIDGE_MODE=omni BRIDGE_TOOLS=1 ./audio-bridge/start.sh
 BRIDGE_TOOLS=1 .venv/bin/python bridge_tools.py
 ```
 
+## Whale 双脑集成（可选）
+- 实时电话仍由 Omni 直接处理音频；设置 \`WHALE_MEMORY_DB=/private/path/whale.db\` 可把用户和 AI 的最终转写异步写入同一记忆库。
+- 不设置时保持原通话行为；此路径不请求 DeepSeek，不等待文本模型回复。
+- \`BRIDGE_TOKEN\` 启用后，手机使用信令设置中的 Token 发送 PCM 连接首帧 \`AUTH <token>\`。**现在音频/信令共用手机端一个 Token 配置项，务必在隔离环境先验证；后续应分离两套凭据。**
+- 默认监听改为 \`127.0.0.1\` 且默认不再留 PCM 捕获；跨设备连接须显式配置地址、认证与安全隧道。
+- HTTP 远程信令已被手机客户端拒绝；需先配置有效 HTTPS 终端再部署新 APK。
+- 当前默认桥模式仍为 agent；建议实际低延迟陪伴使用 \`BRIDGE_MODE=omni\`。
+
 ## 启动 / 停止（box）
 
 ```bash
