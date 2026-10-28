@@ -39,7 +39,7 @@ public final class CallAccountHelper {
                 .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
                 .setSupportedUriSchemes(Collections.singletonList(PhoneAccount.SCHEME_TEL))
                 .setHighlightColor(Color.parseColor("#34A853"))
-                .setShortDescription("Nova Fake Call (self-managed)")
+                .setShortDescription("Nova VoIP Call (self-managed)")
                 .build();
         tm.registerPhoneAccount(self);
         Log.i(TAG, "PhoneAccount registered (self-managed): " + handle(ctx));

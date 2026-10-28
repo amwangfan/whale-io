@@ -23,7 +23,7 @@
 | 原设想 | 覆盖 | 判断 | 优先级 | 落在哪一层 | 现有 stub / 文档 | 下一刀 |
 |--------|------|------|--------|------------|------------------|--------|
 | 云端主动推送到眼镜 | 已描述 | 核心链路已设计 | — | 基础：Turbo-IO / dashboard；智能：`ShowCard` 意图 | [cloud-push.md](cloud-push.md)、[overview.md](overview.md)；`whale_core.actions.ShowCard` | 联调 HTTPS stub → 真机时再注入本机 Token（不入库） |
-| AI 主动打电话 | 部分 | 有音频桥；智能层 **P1 stub 本地可跑** | **P1** | 基础：假来电 + 音频桥；智能：`PlaceCall` + `ProactiveCallPlanner` + `ProactiveCallPolicy` | [voip-bridge.md](voip-bridge.md)；whale-core P1 stub | 真连桥侧仍只收意图（[`infra/call-bridge/`](../infra/call-bridge/)） |
+| AI 主动打电话 | 部分 | 有音频桥；智能层 **P1 stub 本地可跑** | **P1** | 基础：VoIP 来电 + 音频桥；智能：`PlaceCall` + `ProactiveCallPlanner` + `ProactiveCallPolicy` | [voip-bridge.md](voip-bridge.md)；whale-core P1 stub | 真连桥侧仍只收意图（[`infra/call-bridge/`](../infra/call-bridge/)） |
 | 感知手机当前使用状态 | 部分 | 有监测模块 | — | 基础：前台监测；智能：`phone.foreground` | `PhoneForeground`；[`infra/fg-monitor/`](../infra/fg-monitor/) | 事件字段稳定后接适配器；忙态供 `DisturbancePolicy` |
 | 全天环境语音感知 | 部分 | 智能层 **P1 stub 本地可跑**（ambient→情境） | **P1** | 基础：未来采集/ASR；智能：`AmbientSpeechSegment` + `ambient_note` + `AmbientListen` | `extract_ambient_events`；**不含原始音频字节入库** | 本地采集适配器（另仓）；本仓不碰麦克风 |
 | 长期记忆与人格连续性 | 未描述 | 核心缺口 | **P0** | 智能：`memory/` | `MemoryStore` + **`MemoryRecord`**（episode / preference / persona_continuity）+ **`PersonaContinuity`**（新） | 区分三类记忆读写；人格快照跨会话 |

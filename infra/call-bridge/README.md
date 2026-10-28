@@ -1,4 +1,4 @@
-# infra/call-bridge — 假来电 + VoIP 音频桥
+# infra/call-bridge — VoIP 来电 + 音频桥
 
 > whale-io 基础设施之一（原独立实验仓已并入本目录）。Android 包名 `com.nova.fakecall` 及设备 / 服务器部署路径为代码标识，保持不变。
 

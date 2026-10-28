@@ -37,7 +37,7 @@ adb -s <serial> shell dumpsys package <host.package.name> | grep -E 'versionName
 ## 插件 / 附属包
 
 - PhoneBridge、轻量 HUD 等以 **插件或宿主内模块** 形式随实验包或后续分仓发布。
-- 假来电、前台监测是 **独立 App**，安装流程见 [`infra/call-bridge/`](../infra/call-bridge/) 与 [`infra/fg-monitor/`](../infra/fg-monitor/)；默认不替代雷鸟宿主。
+- VoIP 来电、前台监测是 **独立 App**，安装流程见 [`infra/call-bridge/`](../infra/call-bridge/) 与 [`infra/fg-monitor/`](../infra/fg-monitor/)；默认不替代雷鸟宿主。
 
 ## 明确不做
 

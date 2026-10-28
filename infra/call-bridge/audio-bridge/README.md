@@ -1,6 +1,6 @@
 # Nova 音频桥（Tailscale PCM + 语音 Agent）
 
-假来电接通后，手机麦克风 PCM 经 Tailscale TCP 传到本机。支持三种模式：
+VoIP 来电接通后，手机麦克风 PCM 经 Tailscale TCP 传到本机。支持三种模式：
 
 - **omni**（原生多模态）：百炼 `qwen3.8-omni-flash-realtime` WebSocket（Manual + 本地能量 VAD）
 - **agent**（级联回退）：能量 VAD → DashScope ASR → AgentScope LLM → CosyVoice TTS
@@ -63,7 +63,7 @@
 |------|------------|
 | `what_time` | 「现在几点」 |
 | `bridge_status` | 「查一下桥状态」 |
-| `ring_fake_call` | 「打个假来电」 |
+| `ring_fake_call` | 「打个 VoIP 来电」 |
 | `list_workspace` | 「列一下工作区」 |
 | `tail_bridge_log` | 「看桥日志」 |
 | `restart_bridge` | 「重启桥」（会断通话） |
@@ -105,7 +105,7 @@ python3 ./audio-bridge/smoke_test.py
 
 1. 确认桥已 `mode=agent` 监听 `18799`
 2. 手机 APK 默认连 `<TAILSCALE_IP>:18799`（按实际 Tailscale IP）
-3. 发起假来电：`scripts/ring.sh '显示名' '号码' [host] [port]`（号码 `***` 时在 zsh 用 `set -f`）
+3. 发起 VoIP 来电：`scripts/ring.sh '显示名' '号码' [host] [port]`（号码 `***` 时在 zsh 用 `set -f`）
 4. 接听：UI「接听」或 `scripts/answer.sh` / `am broadcast … ACTION_ANSWER`
 5. 说话 → 停顿约 1 秒 → 听助手回复；需 `RECORD_AUDIO`
 

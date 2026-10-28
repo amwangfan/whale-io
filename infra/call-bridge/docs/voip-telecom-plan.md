@@ -1,4 +1,4 @@
-# call-bridge（假来电）× Android VoIP / Telecom 接口评估
+# call-bridge（VoIP 来电）× Android VoIP / Telecom 接口评估
 
 日期：2026-10-27（Asia/Shanghai）  
 设备：Root Nova Android 9 Phh-Treble / NetHunter（<TAILSCALE_IP>）  
@@ -12,7 +12,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
 | 诉求 | 判定 |
 |------|------|
 | 用 VoIP/Telecom 接口 | ✅ 已在用（自管） |
-| 原生拨号盘 InCall UI 显示假来电/AI 通话 | ❌ 当前自管路径做不到（见机上证据） |
+| 原生拨号盘 InCall UI 显示 VoIP 来电/AI 通话 | ❌ 当前自管路径做不到（见机上证据） |
 | 拨号盘拨「1」→ 原生界面 → Omni 音频 | ✅ 可行（改托管账户 + 拦截「1」） |
 | 用系统接口替换 TCP 媒体 | ❌ Telecom 无媒体管道 |
 
@@ -25,7 +25,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
 | 通话 | ConnectionService | inCallServices |
 |------|-------------------|----------------|
 | 真拨出（Telephony） | `com.android.phone/…TelephonyConnectionService` | **`com.android.dialer/…InCallServiceImpl`** ← 原生 UI |
-| Nova 假来电（现行） | `com.nova.fakecall/.FakeConnectionService` | **空 `[]`** ← 系统拨号不接管 |
+| Nova VoIP 来电（现行） | `com.nova.fakecall/.FakeConnectionService` | **空 `[]`** ← 系统拨号不接管 |
 
 原因：`PhoneAccount.CAPABILITY_SELF_MANAGED` + `Connection.PROPERTY_SELF_MANAGED` 规定 **App 自带 UI**（`onShowIncomingCallUi`），默认拨号的 `InCallService` **不会**绑定。
 
@@ -38,7 +38,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
 | 层级 | API | 现状 / 对本需求 |
 |------|-----|----------------|
 | A. 信令 | `TelecomManager` + `ConnectionService` | ✅ 已有 |
-| B. 自管 UI | `CAPABILITY_SELF_MANAGED` | ✅ 假来电在用；**无原生 InCall** |
+| B. 自管 UI | `CAPABILITY_SELF_MANAGED` | ✅ VoIP 来电在用；**无原生 InCall** |
 | C. 音频模式 | `setAudioModeIsVoip` / `MODE_IN_COMMUNICATION` | ⚠️ 半吊子；Phase 音频加强仍要做 |
 | D. SipManager | `android.net.sip` | ❌ 机上无 SIP 框架 |
 | E. **托管 + 系统 InCall** | `CAPABILITY_CALL_PROVIDER`、Connection **不**标 SelfManaged | ⭐ **拨「1」+ 原生 UI 必选** |
@@ -79,7 +79,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
    - 新 `PhoneAccount` id 如 `nova-ai-out`：`CAPABILITY_CALL_PROVIDER`（**不要** SelfManaged）  
    - 同一 `FakeConnectionService`：`onCreateOutgoingConnection` 若号码为 `1`（可再加别名）→ `setDialing()` → 立刻/短延迟 `setActive()` → `AudioBridge.start(host, 18799)`；其它号码 → `setDisconnected(ERROR)`  
    - Connection **不要** `PROPERTY_SELF_MANAGED`；可设 `setAudioModeIsVoip(true)` + 显示名「AI」  
-   - 保留现有自管账户 + `ring.sh` 假来电（两套不打架）
+   - 保留现有自管账户 + `ring.sh` VoIP 来电（两套不打架）
 
 2. **启用账户 + 拦截「1」**  
    - 用户：设置 → 通话 → 呼叫账户 → 启用「Nova AI」；或 root 写 telecom 注册表启用  
@@ -92,7 +92,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
    - 同步做 `MODE_IN_COMMUNICATION` + AudioFocus（听筒/焦点）  
    - box 侧 `BRIDGE_MODE=omni` 不用改
 
-### 与现有假来电 APK / 18799 的关系
+### 与现有 VoIP 来电 APK / 18799 的关系
 
 ```text
 [保留] ring.sh / 自管来电 / 自画 IncomingCallActivity
@@ -105,7 +105,7 @@ APK：`com.nova.fakecall`（源码已至 v1.3-dial1 / versionCode 4，stub 未�
        → 同一 AudioBridge → :18799 Omni
 ```
 
-假来电演示与「拨 1 打 AI」可并存；**不要删 TCP 桥**。
+VoIP 来电演示与「拨 1 打 AI」可并存；**不要删 TCP 桥**。
 
 ### 风险（拨 1 专用）
 
@@ -145,7 +145,7 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 |------|------------------|-------------------------|------------|
 | 系统 InCall 原生 UI | ❌ | ✅ | — |
 | 拨号盘拨 1 → AI | ❌（走蜂窝） | ✅ | ❌ |
-| 假来电自画 UI | ✅ | ✅（可保留） | — |
+| VoIP 来电自画 UI | ✅ | ✅（可保留） | — |
 | Omni TCP 18799 | ✅ | ✅ 复用 | 需另协议 |
 | Android 9 root 可行 | ✅ | ✅ | ❌ |
 
@@ -165,11 +165,11 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 - [ ] root/设置启用账户；冒烟：拨 1 → 见 AOSP InCall → 说话听 Tina  
 - [ ] 顺带：`AudioBridge` 加 `MODE_IN_COMMUNICATION` + focus  
 
-**不**重写整包；假来电路径可暂不动。
+**不**重写整包；VoIP 来电路径可暂不动。
 
 ### Phase 2 — 体验（可选）
 
-- 假来电也改为托管，则来电也走原生 InCall（可砍自画 Activity）  
+- VoIP 来电也改为托管，则来电也走原生 InCall（可砍自画 Activity）  
 - mute/hold/蓝牙：`onCallAudioStateChanged`  
 - 近距熄屏  
 
@@ -184,7 +184,7 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 ## 推荐下一构建步骤
 
 **立刻改 APK：可以开做 v1.3「拨 1」最小切片**（托管账户 + outgoing Connection + NEW_OUTGOING_CALL + 复用 AudioBridge）；先不要大拆自管来电。  
-验证通过后再考虑假来电也迁托管 UI。
+验证通过后再考虑 VoIP 来电也迁托管 UI。
 
 冒烟清单：
 
@@ -199,7 +199,7 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 ## 数据流对照
 
 ```text
-[现有假来电]
+[现有 VoIP 来电]
   ring.sh → SelfManaged → 自画 UI → AudioBridge → :18799
 
 [目标：拨 1]
@@ -212,7 +212,7 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 
 ## 给用户的一句话
 
-可以：在 Android 9 上把「拨 1」拦下来，用**托管** Telecom 账户打进**系统自带电话界面**，音频仍走现在的 Omni 桥；现在的自管假来电故意不用系统界面，所以要加一条拨出路径，而不是再找一层 SIP。
+可以：在 Android 9 上把「拨 1」拦下来，用**托管** Telecom 账户打进**系统自带电话界面**，音频仍走现在的 Omni 桥；现在的自管 VoIP 来电故意不用系统界面，所以要加一条拨出路径，而不是再找一层 SIP。
 
 
 ---
@@ -244,7 +244,7 @@ Manifest 增量（实现时）：`PROCESS_OUTGOING_CALLS`；receiver `NEW_OUTGOI
 
 ### 推荐步骤（路径 1）
 
-1. 注册双账户：保留自管（假来电）+ 新增 `nova-ai-out` CallProvider。  
+1. 注册双账户：保留自管（VoIP 来电）+ 新增 `nova-ai-out` CallProvider。  
 2. Manifest：`PROCESS_OUTGOING_CALLS` + `OutgoingCallReceiver`（已写）。  
 3. 拦 `1`：`setResultData(null)` → `placeOutgoingAi()`（优先 CallProvider handle；未启用则回落自管）。  
 4. `onCreateOutgoingConnection`：托管路径不设 `PROPERTY_SELF_MANAGED`、不拉 `InCallActivity`，`setActive` + `AudioBridge`；自管回落则拉我们的 UI。  

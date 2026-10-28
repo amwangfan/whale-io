@@ -155,7 +155,7 @@ class ProactiveCallPolicy:
     - 默认不允许主动呼叫；
     - Observation.context["allow_proactive_call"] 为真，且不在静默时段，才允许；
     - 或情境 urgency_hint==elevated 且显式 suggest_call / call_reason（仍受静默约束）；
-    - 紧急标记 urgent 可覆盖静默（仍由基础设施执行假来电，本层只放行意图）。
+    - 紧急标记 urgent 可覆盖静默（仍由基础设施执行 VoIP 来电，本层只放行意图）。
     提议侧见 ProactiveCallPlanner；本类只做放行 / 过滤。
     """
 

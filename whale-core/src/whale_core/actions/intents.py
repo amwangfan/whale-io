@@ -32,7 +32,7 @@ class ShowCard:
 
 @dataclass(frozen=True)
 class PlaceCall:
-    """发起 / 接听假来电会话（由假来电音频桥执行）。"""
+    """发起 / 接听 VoIP 来电会话（由 VoIP 来电音频桥执行）。"""
 
     contact_label: str = "AI"
     mode: str = "incoming"  # incoming | outgoing

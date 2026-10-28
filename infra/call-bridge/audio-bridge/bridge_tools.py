@@ -224,8 +224,8 @@ def tool_ring_fake_call(args: dict[str, Any] | None = None) -> str:
     ]
     code, out, err = _run(argv, timeout=max(DEFAULT_TIMEOUT, 12.0))
     if code != 0:
-        return f"假来电失败: {_redact((err or out)[:160])}"
-    return f"已向 Nova 发起假来电（显示 {name}/{number}）"
+        return f"VoIP 来电失败: {_redact((err or out)[:160])}"
+    return f"已向 Nova 发起 VoIP 来电（显示 {name}/{number}）"
 
 
 def tool_restart_bridge(_args: dict[str, Any] | None = None) -> str:
@@ -271,7 +271,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "ring_fake_call",
-            "description": "向 Nova 手机发起假来电铃声。用户说打假来电/再响一次/ring时调用。",
+            "description": "向 Nova 手机发起 VoIP 来电铃声。用户说打 VoIP 来电/再响一次/ring时调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -320,7 +320,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 _INTENT_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(现在几点|几点了|几点钟|what\s*time|当前时间|报时)", re.I), "what_time"),
     (re.compile(r"(查(一下)?桥(的)?状态|桥(还)?在吗|桥状态|bridge\s*status)", re.I), "bridge_status"),
-    (re.compile(r"(假来电|再响(一次)?|打(个)?假(的)?来电|ring(\s*fake)?|响铃)", re.I), "ring_fake_call"),
+    # 兼容旧说法「假来电」作为触发词；默认展示文案用「VoIP 来电」
+    (re.compile(r"(VoIP\s*来电|打(个)?\s*VoIP\s*来电|再响(一次)?|响铃|ring(\s*fake)?|假来电|打(个)?假(的)?来电)", re.I), "ring_fake_call"),
     (re.compile(r"(列(一下)?(工作区|目录)|看(一下)?工作区|list\s*workspace)", re.I), "list_workspace"),
     (re.compile(r"(桥日志|看(一下)?日志|tail.*log|bridge\s*log)", re.I), "tail_bridge_log"),
     (re.compile(r"(重启桥|重启音频桥|restart\s*bridge)", re.I), "restart_bridge"),
@@ -349,13 +350,13 @@ def execute(name: str, args: dict[str, Any] | None = None) -> tuple[bool, str]:
         return False, f"未知工具 {name}"
     try:
         result = handler(args)
-        ok = not result.startswith(("获取时间失败", "列出失败", "读日志失败", "假来电失败", "重启失败", "找不到"))
+        ok = not result.startswith(("获取时间失败", "列出失败", "读日志失败", "VoIP 来电失败", "重启失败", "找不到"))
         # softer ok: any non-exception result from handler is ok unless explicit fail prefix
         fail_prefixes = (
             "获取时间失败",
             "列出失败",
             "读日志失败",
-            "假来电失败",
+            "VoIP 来电失败",
             "重启失败",
             "找不到",
             "桥日志文件不存在",
@@ -372,7 +373,7 @@ def execute(name: str, args: dict[str, Any] | None = None) -> tuple[bool, str]:
 
 def tools_instructions_addon() -> str:
     return (
-        "你可以调用白名单工具帮用户：查桥状态、打假来电、看时间、列工作区、看桥日志、重启桥。"
+        "你可以调用白名单工具帮用户：查桥状态、打 VoIP 来电、看时间、列工作区、看桥日志、重启桥。"
         "需要真实信息时先调用对应工具，再用一两句中文口语把结果告诉用户。"
     )
 

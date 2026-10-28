@@ -8,7 +8,7 @@
 Whale Core / Memory / Perception / Initiative / Actions / Whale UI
         │
         ▼  契约（事件 in / 意图 out）
-Turbo-IO·dashboard · 假来电音频桥 · 前台监测 · （固件暂停）· 未来控制桥 / 采集
+Turbo-IO·dashboard · VoIP 来电音频桥 · 前台监测 · （固件暂停）· 未来控制桥 / 采集
 ```
 
 禁止反向依赖：基础设施模块不得 import `whale_core` 业务决策（可共享纯 DTO 若另抽，当前未抽）。
@@ -35,7 +35,7 @@ Turbo-IO·dashboard · 假来电音频桥 · 前台监测 · （固件暂停）�
 | 意图 kind | 语义 | 落地侧 | 智能层不做 |
 |-----------|------|--------|------------|
 | `show_card` | HUD 卡片 | Turbo-IO / dashboard HTTPS | 像素渲染、approve、蓝牙 |
-| `place_call` | 假来电会话 | 假来电 App + 音频桥 | TCP PCM、厂商通话 API |
+| `place_call` | VoIP 来电会话 | VoIP 来电 App + 音频桥 | TCP PCM、厂商通话 API |
 | `speak` | 语音播报 | TTS / 通话桥 | API Key、供应商账号 |
 | `phone_action` | 打开应用 / 通知等 | **未来手机控制桥** | ADB / Accessibility |
 | `navigate_hint` | 路线提醒卡片 | dashboard / HUD | 导航引擎 |

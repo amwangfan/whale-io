@@ -30,7 +30,7 @@ DEFAULT_VOICE = os.environ.get("BRIDGE_OMNI_VOICE", "Tina").strip() or "Tina"
 DEFAULT_INSTRUCTIONS = os.environ.get(
     "BRIDGE_OMNI_INSTRUCTIONS",
     "你是电话助手。只用极短中文口语回复，最多一两句、合计约20字以内，不要解释、不要列表。"
-    "需要时可调用白名单工具：查桥状态、打假来电、看时间、列工作区、看桥日志、重启桥；"
+    "需要时可调用白名单工具：查桥状态、打 VoIP 来电、看时间、列工作区、看桥日志、重启桥；"
     "有工具结果时用一两句口语转告用户。",
 )
 INPUT_RATE = 16000

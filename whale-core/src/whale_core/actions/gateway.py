@@ -47,7 +47,7 @@ class HttpDashboardGateway:
 
 
 class LocalBridgeGateway:
-    """假来电音频桥网关 stub：默认 127.0.0.1:18799，不建 TCP。"""
+    """VoIP 来电音频桥网关 stub：默认 127.0.0.1:18799，不建 TCP。"""
 
     def __init__(
         self,

@@ -14,7 +14,7 @@
 | 智能 | **Actions** | ShowCard / PlaceCall / Speak 意图 + Gateway | `whale_core.actions` |
 | 智能 | **Whale UI** | 人格、文案、语音风格、HUD 呈现意图 | `whale_core.ui` |
 | 基础 | **Turbo-IO / dashboard** | PhoneBridge、云推送上镜、轻量 HUD 执行 | 上游 [Turbo1123/Turbo-IO](https://github.com/Turbo1123/Turbo-IO)（不在本仓） |
-| 基础 | **假来电音频桥** | 自管来电 UI + PCM 桥 | [`infra/call-bridge/`](../infra/call-bridge/) |
+| 基础 | **VoIP 来电音频桥** | 自管来电 UI + PCM 桥 | [`infra/call-bridge/`](../infra/call-bridge/) |
 | 基础 | **前台监测** | 前台 / 最近应用监测与截图 | [`infra/fg-monitor/`](../infra/fg-monitor/) |
 | 基础 | **眼镜固件** | **暂停**；无书面说明不刷 | — |
 
@@ -56,7 +56,7 @@ flowchart TB
 
   subgraph infra [基础设施 — 不动本层业务]
     DASH[Turbo-IO / dashboard]
-    BRIDGE[假来电音频桥<br/>127.0.0.1:18799]
+    BRIDGE[VoIP 来电音频桥<br/>127.0.0.1:18799]
     MON[前台监测]
     FW[眼镜固件暂停]
   end
@@ -120,6 +120,6 @@ sequenceDiagram
 |------|------|
 | 概述与操作指导 | [`docs/`](./) |
 | 智能层 | [`whale-core/`](../whale-core/) |
-| 假来电 / VoIP 音频桥 | [`infra/call-bridge/`](../infra/call-bridge/) |
+| VoIP 来电 / VoIP 音频桥 | [`infra/call-bridge/`](../infra/call-bridge/) |
 | 前台监测 + 截图 | [`infra/fg-monitor/`](../infra/fg-monitor/) |
 | Turbo-IO（PhoneBridge / 云推送上镜） | 不在本仓；上游 [Turbo1123/Turbo-IO](https://github.com/Turbo1123/Turbo-IO)，本地改动另行管理 |

@@ -4,13 +4,13 @@
 
 <h3><i>海内存知己，天涯若比邻</i></h3>
 
-<sub>鲸鱼智能层 × 雷鸟 iO 眼镜 / 手机 / 假来电基础设施</sub>
+<sub>鲸鱼智能层 × 雷鸟 iO 眼镜 / 手机 / VoIP 来电基础设施</sub>
 
 </div>
 
 ---
 
-**whale-io** 是一个 monorepo：上层是 **鲸鱼智能层（whale-core）**——记忆、感知、打扰策略与行动意图；下层是让它落地到 **雷鸟 iO 眼镜、Magic8 手机与假来电通话** 的基础设施。智能层只定义「事件 in / 意图 out」契约，不写设备细节。
+**whale-io** 是一个 monorepo：上层是 **鲸鱼智能层（whale-core）**——记忆、感知、打扰策略与行动意图；下层是让它落地到 **雷鸟 iO 眼镜、Magic8 手机与 VoIP 来电通话** 的基础设施。智能层只定义「事件 in / 意图 out」契约，不写设备细节。
 
 ## 目录导航
 
@@ -18,7 +18,7 @@
 |------|------|-------------|
 | [`docs/`](docs/) | 项目概述、分层架构、原设想覆盖对照、操作指导（云推送、APK 安装、音频桥、安全） | Markdown |
 | [`whale-core/`](whale-core/) | 智能层 Python 包 `whale_core`：Core / Memory / Perception / Initiative / Actions / UI，P0+P1 可跑 stub | Python 3.11+ · uv |
-| [`infra/call-bridge/`](infra/call-bridge/) | 假来电 App（自管 Telecom + 全屏来电 UI）与 PCM 音频桥 / 信令（默认 `127.0.0.1:18799`） | Java（Android）+ Python |
+| [`infra/call-bridge/`](infra/call-bridge/) | VoIP 来电 App（自管 Telecom + 全屏来电 UI）与 PCM 音频桥 / 信令（默认 `127.0.0.1:18799`） | Java（Android）+ Python |
 | [`infra/fg-monitor/`](infra/fg-monitor/) | 前台 / 最近应用监测 + 截图 App（Root 与非 Root flavor） | Kotlin · Gradle |
 
 推荐阅读顺序：[`docs/overview.md`](docs/overview.md) → [`docs/architecture.md`](docs/architecture.md) → [`docs/vision-coverage.md`](docs/vision-coverage.md) → [`whale-core/docs/contracts.md`](whale-core/docs/contracts.md)。
