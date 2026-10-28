@@ -326,9 +326,6 @@ def handle_echo(conn, addr, capture_dir: Path, echo: bool, beep: bool) -> None:
             pass
         if capture_fp:
             capture_fp.close()
-        if transcript_recorder is not None:
-            transcript_recorder.close()
-            _memory_store.close()
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
@@ -611,6 +608,24 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
     play_q: list[bytes] = []
     play_q_lock = threading.Lock()
     play_wake = threading.Event()
+    # Optional nonblocking memory relay (same as handle_agent). None when
+    # WHALE_MEMORY_DB unset or whale_core unavailable; on_omni_event checks it.
+    transcript_recorder = None
+    _memory_store = None
+    call_session_id = uuid4().hex
+    memory_path = os.environ.get("WHALE_MEMORY_DB", "").strip()
+    if memory_path:
+        try:
+            _core_src = Path(__file__).resolve().parents[3] / "whale-core" / "src"
+            if _core_src.is_dir() and str(_core_src) not in sys.path:
+                sys.path.insert(0, str(_core_src))
+            from whale_core.memory.sqlite_store import SqliteMemoryStore
+            from whale_core.core.companion import RealtimeTranscriptRecorder
+            _memory_store = SqliteMemoryStore(memory_path)
+            transcript_recorder = RealtimeTranscriptRecorder(_memory_store)
+        except Exception as ex:
+            print(f"[omni] memory relay unavailable: {type(ex).__name__}", flush=True)
+            transcript_recorder = None
 
     def enqueue_audio(pcm16: bytes) -> None:
         if not pcm16:
@@ -927,6 +942,16 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
             pass
         if capture_fp:
             capture_fp.close()
+        if transcript_recorder is not None:
+            try:
+                transcript_recorder.close()
+            except Exception as ex:
+                print(f"[omni {peer}] memory relay close fail: {type(ex).__name__}", flush=True)
+        if _memory_store is not None:
+            try:
+                _memory_store.close()
+            except Exception:
+                pass
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
