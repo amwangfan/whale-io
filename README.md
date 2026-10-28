@@ -48,6 +48,16 @@ JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
 
 云推送上镜的 HTTPS 约定与联调清单见 [`docs/cloud-push.md`](docs/cloud-push.md)（域名示例 `https://rayneo.wangfanlab.com/turbo`）。
 
+## 鲸鱼的产品意图与生效链路（从这里开始）
+
+- **[功能意图规范](docs/companion-intents.md)**：12 项能力分别解决什么体验问题、怎样输入/输出、哪些不该自动执行。
+- **[模块组合与真实闭环](docs/companion-pipelines.md)**：双脑 → 记忆 → 内部状态 → 候选 → 授权/不打扰 → 眼镜/电话/QQ；附演示与回执定义。
+- **[状态与分阶段验收](docs/companion-roadmap.md)**：区分代码已测试、设备未联调与未来目标，避免将计划说成已实现。
+- **[开源参考与借鉴边界](docs/reference-projects.md)**：MaiBot、AstrBot、DSH 鱼的记忆/主动搭话/鱼的心情/B站生活、小九九等。
+- **[可运行的无网络演示](whale-core/examples/life_scenario.py)**：用户兴趣 → 内容候选 → 默认禁止 → 单次批准 → 模拟渠道受理。
+
+**默认边界**：不主动联系、不主动打电话、不擅自录音截图、不自动替用户操作 QQ/B站；部署前必须经过账号/设备级授权。小型代码原型与真实接入不是一回事。
+
 ## 双脑能力与演进
 
 参见 [双脑架构与 P0/P1 上线清单](docs/dual-brain.md)。实时电话走 Omni 原生语音，DeepSeek 是独立文字陪伴客户端；转写共享记忆是可选功能，不会使通话等待 DeepSeek。真实数据适配器、完整 Dashboard API 契约和远端同步仍需后续联调。

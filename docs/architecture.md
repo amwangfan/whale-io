@@ -101,6 +101,12 @@ sequenceDiagram
 - 安全约定见 [security.md](security.md)；域名示例 `https://rayneo.wangfanlab.com/turbo`。
 
 
+## 进一步的产品行为与意图层
+
+最新“鲸鱼陪伴”规范见 [companion-intents.md](companion-intents.md)。该规范在目前 Core / Memory / Perception / Initiative / Actions / UI 的分层之上，定义记忆提炼、虚拟内部状态、未尽话题、自主探索、主动行为草稿、反馈和 QQ 等多端适配的**行为闭环**。
+
+相关文件：[运行/回执/审批协议](companion-pipelines.md)、[可用性与验收表](companion-roadmap.md)、[项目参考与许可边界](reference-projects.md)。这是一套以单实例可运行原型为起点的设计；真实天气、课程、QQ、眼镜、B站调用仍由外围适配器实现且默认关闭。
+
 ## 与原设想的关系
 
 用户「原本功能设想」与当前草稿的对照（覆盖判断、优先级、落层、现有 stub、下一刀）见 **[vision-coverage.md](vision-coverage.md)**。

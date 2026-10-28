@@ -6,18 +6,25 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 from whale_core.memory.store import MemoryStore
+from whale_core.memory.curation import MemoryCurator
 from whale_core.memory.continuity import remember_episode, build_continuity_context
 
 class TextCompanion(Protocol):
     def reply(self, text: str, *, persona: str = "", memories=(), history=()) -> str: ...
 
 class WhaleCompanion:
-    def __init__(self, store: MemoryStore, model: TextCompanion):
-        self.store, self.model = store, model
+    def __init__(self, store: MemoryStore, model: TextCompanion, *, curator: MemoryCurator | None = None):
+        self.store, self.model, self.curator = store, model, curator
 
     def chat(self, text: str) -> str:
         ctx = build_continuity_context(self.store)
-        memories = [str(r.content.get("summary", "")) for r in ctx.recent_episodes]
+        if self.curator is not None:
+            memories = [str(hit.record.content.get("summary", ""))
+                        for hit in self.curator.recall(text)]
+        else:
+            # Legacy chat-only behavior kept for backwards compatibility; opt in
+            # to curated retrieval to avoid injecting raw transcripts by default.
+            memories = [str(r.content.get("summary", "")) for r in ctx.recent_episodes]
         response = self.model.reply(text, persona=ctx.persona_summary, memories=memories)
         remember_episode(self.store, summary=f"用户：{text[:500]}\n鲸鱼：{response[:500]}",
                          key=f"ep:chat:{uuid4().hex}", tags=("chat",))
