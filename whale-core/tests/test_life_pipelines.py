@@ -99,3 +99,12 @@ def test_channel_identity_pairing():
     assert registry.accept(incoming).owner_id == "u1"
     assert registry.accept(Incoming("qq", "100", "private", "m1", "hi", False)) is None
     assert registry.accept(Incoming("qq", "101", "private", "m2", "hi", True)) is None
+
+def test_external_direct_message_needs_individual_review():
+    rt = make_runtime()
+    rt.outbox.propose(ProactiveDraft("qq-1", "hi", "reason", ("event-3",), channel="direct_message"))
+    prefs = ProactivePrefs(enabled=True, auto_send=True,
+                           allowed_channels=frozenset({"direct_message"}))
+    port = FakePort()
+    assert rt.deliver("qq-1", prefs=prefs, now=DAY, port=port).status == "needs_approval"
+    assert port.calls == []

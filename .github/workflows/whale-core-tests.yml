@@ -14,3 +14,4 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e "./whale-core[dev]"
       - run: python -m pytest whale-core/tests -q
+      - run: python whale-core/examples/life_scenario.py

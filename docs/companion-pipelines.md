@@ -80,7 +80,7 @@ sequenceDiagram
 
 - **入口**：外部平台先做身份验证与密钥校验；`OwnerChannelRegistry.accept(Incoming)` 再检查所有者的显式账号配对，产出 `OwnerEvent`。QQ 群聊、陌生人文本和网页内容永远是不可信输入，不能更改权限。
 - **候选**：`ProactiveDraft`：`draft_id/text/reason/evidence/channel/importance/created_at/expires_at`。同一 `draft_id` 只保存一次。
-- **审批**：`ProactivePrefs` 默认 `enabled=False`、`auto_send=False`、`allow_calls=False`，且渠道默认空集合。语音电话总是要求单次确认。
+- **审批**：`ProactivePrefs` 默认 `enabled=False`、`auto_send=False`、`allow_calls=False`，且渠道默认空集合。语音电话与外部私信始终要求单次确认。
 - **分发**：`OutboundPort.send(draft) -> bool` 由外部适配器实现；它的 `True` 仅表示渠道**受理**，不是送达、已读、用户同意。当前没有真正的 QQ/眼镜 outbound port。
 - **账本**：`draft → disabled/deferred/needs_approval/ready → attempting → accepted/unknown`。先登记尝试再调用外部服务；状态 `unknown` 不自动重试，以免重复骚扰。用户反馈另记 `life:feedback:<id>`。
 - **扩展生产要求**：当前 MemoryStore 的判断与写入没有分布式原子事务；多个进程同时发送时需要**租约/唯一约束/队列 + 提供商幂等键**。凭据仅存外部 Secret Manager，网络消息需要重试和心跳机制但不能不受控重发。

@@ -131,7 +131,7 @@ class ProactiveOutbox:
         if count >= prefs.daily_limit:
             return DispatchVerdict("over_budget", "daily delivery cap", draft_id)
         # A call is always reviewed; auto_send is limited to explicitly allowed low-risk channels.
-        if not explicitly_approved and (draft.channel == "call" or not prefs.auto_send):
+        if not explicitly_approved and (draft.channel in {"call", "direct_message"} or not prefs.auto_send):
             return DispatchVerdict("needs_approval", "human review required", draft_id)
         return DispatchVerdict("ready", "authorized and within budget", draft_id)
 
