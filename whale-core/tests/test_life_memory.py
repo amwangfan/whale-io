@@ -59,3 +59,20 @@ def test_inner_state_persists_and_user_can_reset():
     assert state.update(close_topic="模拟电路错题").unfinished_topics == ()
     state.reset()
     assert state.load().style == "neutral"
+
+
+def test_deepseek_companion_opt_in_curated_context():
+    from whale_core.core.companion import WhaleCompanion
+    from whale_core.memory.store import PersonaContinuity
+    store = InMemoryStore()
+    store.put_persona_continuity(PersonaContinuity())
+    remember_episode(store, summary="未审查的电话内容", key="ep:call:raw")
+    cur = MemoryCurator(store)
+    cur.remember("喜欢模拟电路", source="owner", evidence_id="chat:10",
+                 consent=True, stable_fact=True)
+    class FakeText:
+        def reply(self, text, *, persona="", memories=(), history=()):
+            assert "模拟电路" in " ".join(memories)
+            assert "未审查" not in " ".join(memories)
+            return "记得这件事"
+    WhaleCompanion(store, FakeText(), curator=cur).chat("模拟电路")
