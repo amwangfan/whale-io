@@ -48,6 +48,10 @@ JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
 
 云推送上镜的 HTTPS 约定与联调清单见 [`docs/cloud-push.md`](docs/cloud-push.md)（域名示例 `https://rayneo.wangfanlab.com/turbo`）。
 
+## 双脑能力与演进
+
+参见 [双脑架构与 P0/P1 上线清单](docs/dual-brain.md)。实时电话走 Omni 原生语音，DeepSeek 是独立文字陪伴客户端；转写共享记忆是可选功能，不会使通话等待 DeepSeek。真实数据适配器、完整 Dashboard API 契约和远端同步仍需后续联调。
+
 ## 安全说明
 
 - **密钥只在本机填入，不入库**：phone Token、`SIGNAL_TOKEN`、`DASHSCOPE_API_KEY` 等通过环境变量或本机私有文件（如 `infra/call-bridge/secrets/`，已 gitignore）提供。

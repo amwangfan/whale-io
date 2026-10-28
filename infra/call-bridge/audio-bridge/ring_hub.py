@@ -17,6 +17,7 @@ import json
 import os
 import queue
 import socket
+import hmac
 import struct
 import threading
 import time
@@ -43,12 +44,12 @@ _stats = {"rings": 0, "delivered": 0, "polls": 0, "started": time.time()}
 
 def _auth(params: dict[str, str], headers) -> bool:
     if not TOKEN:
-        return True
+        return False
     auth = headers.get("Authorization") if headers else None
-    if auth and auth.lower().startswith("bearer ") and auth[7:].strip() == TOKEN:
+    if auth and auth.lower().startswith("bearer ") and hmac.compare_digest(auth[7:].strip(), TOKEN):
         return True
-    tok = params.get("token") or headers.get("X-Ring-Token") if headers else ""
-    return (tok or "") == TOKEN
+    tok = headers.get("X-Ring-Token", "") if headers else ""
+    return hmac.compare_digest(tok or "", TOKEN)
 
 
 def _ring_msg(params: dict[str, Any]) -> dict[str, Any]:
@@ -212,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_json(self) -> dict[str, Any]:
         n = int(self.headers.get("Content-Length") or "0")
+        if n < 0 or n > 65536:
+            raise ValueError("invalid request length")
         raw = self.rfile.read(n) if n > 0 else b""
         if not raw:
             return {}

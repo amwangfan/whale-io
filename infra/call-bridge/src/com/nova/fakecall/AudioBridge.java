@@ -33,6 +33,7 @@ public final class AudioBridge {
 
     private final String host;
     private final int port;
+    private final String authToken;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread worker;
     private Socket socket;
@@ -48,7 +49,9 @@ public final class AudioBridge {
         String h = (host == null || host.length() == 0) ? DEFAULT_HOST : host;
         int p = port > 0 ? port : DEFAULT_PORT;
         applyVoipAudio(ctx);
-        AudioBridge b = new AudioBridge(h, p);
+        Context safeCtx = ctx != null ? ctx : appContext();
+        String auth = safeCtx == null ? "" : SignalPrefs.getToken(safeCtx);
+        AudioBridge b = new AudioBridge(h, p, auth);
         sInstance = b;
         b.startInternal();
     }
@@ -130,9 +133,10 @@ public final class AudioBridge {
         } catch (Throwable ignored) {}
     }
 
-    private AudioBridge(String host, int port) {
+    private AudioBridge(String host, int port, String authToken) {
         this.host = host;
         this.port = port;
+        this.authToken = authToken == null ? "" : authToken;
     }
 
     private void startInternal() {
@@ -181,6 +185,10 @@ public final class AudioBridge {
         final DataOutputStream out = new DataOutputStream(s.getOutputStream());
         final DataInputStream in = new DataInputStream(s.getInputStream());
 
+        // Server rejects PCM until authentication when BRIDGE_TOKEN is configured.
+        if (!authToken.isEmpty()) {
+            writeFrame(out, TYPE_CTRL, ("AUTH " + authToken).getBytes("UTF-8"));
+        }
         writeFrame(out, TYPE_CTRL, ("HELLO nova sample=" + SAMPLE_RATE).getBytes("UTF-8"));
 
         int minRec = AudioRecord.getMinBufferSize(SAMPLE_RATE,

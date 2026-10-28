@@ -51,6 +51,11 @@ whale-core/uv.lock
 *.log.*
 *.pid
 *.pcm
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 .state/
 .tmp/
 tmp/

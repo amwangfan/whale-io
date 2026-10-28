@@ -17,6 +17,8 @@ import argparse
 import math
 import os
 import socket
+import hmac
+from uuid import uuid4
 import struct
 import sys
 import threading
@@ -324,6 +326,9 @@ def handle_echo(conn, addr, capture_dir: Path, echo: bool, beep: bool) -> None:
             pass
         if capture_fp:
             capture_fp.close()
+        if transcript_recorder is not None:
+            transcript_recorder.close()
+            _memory_store.close()
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
@@ -336,6 +341,24 @@ def handle_agent(conn, addr, capture_dir: Path, beep: bool) -> None:
     stop = threading.Event()
     playing = threading.Event()
     vad = EnergyVAD()
+    # Optional nonblocking memory relay. No DeepSeek/SQLite work on Omni callback thread.
+    transcript_recorder = None
+    call_session_id = uuid4().hex
+    memory_path = os.environ.get("WHALE_MEMORY_DB", "").strip()
+    if memory_path:
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _core_src = _Path(__file__).resolve().parents[3] / "whale-core" / "src"
+            if _core_src.is_dir() and str(_core_src) not in _sys.path:
+                _sys.path.insert(0, str(_core_src))
+            from whale_core.memory.sqlite_store import SqliteMemoryStore
+            from whale_core.core.companion import RealtimeTranscriptRecorder
+            _memory_store = SqliteMemoryStore(memory_path)
+            transcript_recorder = RealtimeTranscriptRecorder(_memory_store)
+        except Exception as ex:
+            print(f"[omni] memory relay unavailable: {type(ex).__name__}", flush=True)
+            transcript_recorder = None
     sys_prompt = SYSTEM_PROMPT
     if tools_enabled():
         sys_prompt = SYSTEM_PROMPT.rstrip() + " " + tools_instructions_addon()
@@ -722,9 +745,14 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
             still handle paraphrases that miss the keyword list.
             """
             nonlocal sess
+            t = ev.get("type") or ""
+            if transcript_recorder is not None:
+                if t == "conversation.item.input_audio_transcription.completed":
+                    transcript_recorder.offer(call_session_id, "user", str(ev.get("transcript") or ""))
+                elif t == "response.audio_transcript.done":
+                    transcript_recorder.offer(call_session_id, "assistant", str(ev.get("transcript") or ""))
             if not use_tools or sess is None:
                 return
-            t = ev.get("type") or ""
             if t != "conversation.item.input_audio_transcription.completed":
                 return
             user_tx = (ev.get("transcript") or "").strip()
@@ -780,7 +808,7 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
                 instructions=omni_instructions,
                 tools=TOOL_SCHEMAS if use_tools else None,
                 on_audio=enqueue_audio,
-                on_event=on_omni_event if use_tools else None,
+                on_event=on_omni_event,
                 on_function_call=handle_omni_function_call if use_tools else None,
                 log=lambda m: print(m if m.startswith("[omni]") else f"[omni {peer}] {m}", flush=True),
             )
@@ -902,8 +930,18 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
-def handle_client(conn, addr, capture_dir: Path, mode: str, beep: bool, echo: bool) -> None:
+def handle_client(conn, addr, capture_dir: Path | None, mode: str, beep: bool, echo: bool) -> None:
     try:
+        # Authenticate before HELLO, model access or PCM processing.
+        if TOKEN:
+            conn.settimeout(8)
+            typ, payload = read_frame(conn)
+            if typ != TYPE_CTRL or not payload.startswith(b"AUTH "):
+                raise PermissionError("audio authentication required")
+            if not hmac.compare_digest(payload[5:].decode("utf-8", "replace"), TOKEN):
+                raise PermissionError("audio authentication failed")
+            conn.settimeout(None)
+            conn.sendall(struct.pack("!IB", 7, TYPE_CTRL) + b"AUTH_OK")
         if mode == "echo":
             handle_echo(conn, addr, capture_dir, echo=echo, beep=beep)
         elif mode == "omni":
@@ -927,8 +965,12 @@ def main() -> int:
     ap.add_argument("--mode", choices=("echo", "agent", "omni"), default=default_mode)
     ap.add_argument("--no-echo", action="store_true", help="echo mode: do not loopback mic")
     ap.add_argument("--no-beep", action="store_true")
-    ap.add_argument("--capture-dir", default=str(Path(__file__).resolve().parent / "captures"))
+    ap.add_argument("--capture-dir", default=os.environ.get("BRIDGE_CAPTURE_DIR", ""), help="Opt-in PCM capture directory; disabled by default")
     args = ap.parse_args()
+    # TCP PCM is not encrypted. Use loopback/USB reverse or a private tunnel.
+    if args.host not in ("127.0.0.1", "::1", "localhost") and not TOKEN:
+        ap.error("BRIDGE_TOKEN required for non-loopback bind")
+    capture_dir = Path(args.capture_dir) if args.capture_dir else None
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -947,7 +989,7 @@ def main() -> int:
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             t = threading.Thread(
                 target=handle_client,
-                args=(conn, addr, Path(args.capture_dir), args.mode, not args.no_beep, not args.no_echo),
+                args=(conn, addr, capture_dir, args.mode, not args.no_beep, not args.no_echo),
                 daemon=True,
             )
             t.start()
