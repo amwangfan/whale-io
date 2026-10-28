@@ -14,7 +14,7 @@
 flowchart TB
   subgraph endpoints [终端]
     CALL[VoIP 电话<br/>call-bridge App]
-    QQ[QQ<br/>OneBot 外置适配器]
+    QQ[QQ<br/>官方 Bot API / OneBot 双轨]
     GLASS[眼镜 HUD<br/>经手机 HTTPS 轮询]
   end
 
@@ -59,7 +59,7 @@ flowchart TB
 
 | 档 | 定位 | 延迟预算 | 现状 | 仓内落点 |
 |----|------|----------|------|----------|
-| **R 原生 realtime** | 语音进语音出、可打断、原生 tools | 首音频 ≤ 800 ms | [已有代码] `BRIDGE_MODE=omni` | `audio-bridge/omni_realtime.py`，默认 `qwen3.8-omni-flash-realtime`（DashScope WS） |
+| **R 原生 realtime** | 语音进语音出、可打断、原生 tools | 首音频 ≈1.4 s、打断停止 <100 ms（厂商实测口径，2026-10） | [已有代码] `BRIDGE_MODE=omni` | `audio-bridge/omni_realtime.py`，默认 `qwen3.8-omni-flash-realtime`（DashScope WS） |
 | **C 级联语音** | VAD→ASR→LLM→TTS，各环节可独立替换 | 句末→首音频 1.5–3 s | [已有代码] `BRIDGE_MODE=agent` | `audio-bridge/server.py`：`fun-asr-flash-2026-06-15` → `qwen3.8-flash` / `deepseek-v4.1-flash` → `cosyvoice-v3-flash` |
 | **T 深文本** | 长对话、记忆整理、草稿、评估 | 秒级，非实时 | [已测试]（CI 中 HTTP 不出网） | `core/deepseek.py` `DeepSeekCompanion`，默认 `deepseek-chat` |
 | **J 判断/轻量** | 意图分类、摘要、卡片文案、门控 | ms–秒 | [已测试] 规则实现 | `cloud/loop.py` `RuleActionSelector`、`perception/reasoner.py` `ContextReasoner` |
@@ -83,20 +83,25 @@ flowchart TB
 
 - **注册**：沿用 env 约定（`BRIDGE_OMNI_MODEL`、`BRIDGE_ASR_MODEL`、`BRIDGE_TTS_MODEL`、`BRIDGE_LLM_MODEL`、`DEEPSEEK_MODEL`）[已有代码]；[规划] 云端增加 `WHALE_MODEL_PROFILE`（env 指向宿主机私有 JSON，不入库）声明每档能力矩阵：`audio_in/audio_out/tools/streaming/cost_class/latency_class`，路由器按能力选择而非硬编码型号。
 - **熔断降级**：[规划] R 档连续 N 次 WS 失败→标记冷却并自动落 C 档；恢复需通过一次离线冒烟（`smoke_test.py` / `omni_realtime.py` 已有 [已测试]）。
-- **成本记账**：[规划] 在各档客户端回收据处记 token/音频秒，按周聚合进 owner 周报（第 5 节）。量级参考：realtime 按音频分钟计价最贵，应只对真实通话开启；QQ/卡片走 T/J 档成本低一个数量级。
+- **Provider 抽象**：[规划] R 档封装 `RealtimeProvider` 接口——各家 realtime 事件协议已趋同（`session.update` / `response.audio.delta` / commit+`response.create`），Qwen-Omni 为默认，火山 Seeduplex 全双工作大陆备选，海外版可换 OpenAI gpt-realtime-2 / Gemini Live。
+- **成本记账**：[规划] 在各档客户端回收据处记 token/音频秒，按周聚合进 owner 周报（第 5 节）。量级锚点（2026-10 调研）：Omni 通话约 1 分/分钟（≈¥0.01/分钟）、DeepSeek 文字陪伴 <¥0.01/轮（闲时半价）、嵌入与对象存储近乎免费——单用户全渠道月成本预计数十元内，瓶颈是工程复杂度而非账单；R 档是最贵档，只对真实通话开启。
 
 ### 2.4 候选模型快照（2026-10，部署前复核）
 
-| 档 | 当前使用（仓内事实） | 备选 | 选择理由 / 备注 |
+| 档 | 当前使用（仓内事实） | 备选（2026-10 调研） | 选择理由 / 备注 |
 |----|----------------------|------|------------------|
-| R | DashScope `qwen3.8-omni-flash-realtime`（WS，Manual+能量 VAD，音色 Tina）| OpenAI Realtime、Gemini Live、MiniMax realtime | 大陆直连、与现有 `DASHSCOPE_API_KEY` 同栈、原生 tools；海外系延迟与可达性不稳 |
-| C-ASR | DashScope `fun-asr-flash-2026-06-15`（同步 base64 WAV）| `paraformer-realtime`/Gummy 流式、SenseVoice/FunASR 自托管 | [规划] QQ 语音与低延迟场景换流式型号；自托管适合降本与隐私 |
-| C-LLM | AgentScope `qwen3.8-flash`（可换 `deepseek-v4.1-flash`）| 任意 Chat Completions 兼容端点 | 短句快；`BRIDGE_LLM_MODEL` 已可覆盖 |
-| C-TTS | DashScope CosyVoice `cosyvoice-v3-flash`（音色 longanhuan）| MiniMax speech、Fish Audio、OpenAI TTS | 流式、中文情感音色；与 ASR 同 Key 减少凭据面 |
-| T | `deepseek-chat`（`DEEPSEEK_MODEL` 可覆盖）| deepseek reasoner（记忆整理等批处理）| 长文本陪伴质量与价格平衡；无官方语音，语音一律走 C 档 |
-| 嵌入 | 未用（`MemoryCurator` 为词项匹配）| BGE-M3 自托管、DashScope text-embedding | 仅用于第 3.4 节混合召回，非实时路径 |
+| R | DashScope `qwen3.8-omni-flash-realtime`（WS，Manual+能量 VAD，音色 Tina） | 火山 Seeduplex 全双工（大陆可用备选）；MiniMax Speech 2.6（<250 ms，声音克隆+情感 LoRA）；OpenAI gpt-realtime-2 / Gemini 3.8 Live（海外版，大陆不可直连） | 16k PCM 进出与音频桥零改造匹配、服务端 VAD + 毫秒级打断、原生 Function Call/MCP；音频入 ¥6/M token，实测约 ¥0.0025/轮（[实测文](https://developer.aliyun.com/article/1772614)、[模型清单](https://www.alibabacloud.com/help/en/model-studio/models)） |
+| C-ASR | DashScope `fun-asr-flash-2026-06-15`（同步 base64 WAV） | `paraformer-realtime-v2` 流式（¥0.00024/秒，中文含方言+热词）；`fun-asr-flash-8k-realtime`（电话 8k 场景）；Gummy（识别+翻译一体）；FunASR/SenseVoice 自托管（零 API 费，需 GPU 运维） | [规划] QQ 语音条与低延迟场景换流式型号（[paraformer-realtime-v2](https://www.qianwenai.com/models/paraformer-realtime-v2)、[自托管对比](https://cloud.tencent.cn/developer/article/2642961)） |
+| C-LLM | AgentScope `qwen3.8-flash`（可换 `deepseek-v4.1-flash`） | 任意 Chat Completions 兼容端点 | 短句快；`BRIDGE_LLM_MODEL` 已可覆盖 |
+| C-TTS | DashScope CosyVoice `cosyvoice-v3-flash`（音色 longanhuan） | `cosyvoice-v3.5-plus`（¥1.5/万字符，声音克隆+free-style 指令，11 语种）；`qwen-audio-3.1-tts`；MiniMax Speech 2.6；Fish Audio S1 | 与 ASR 同 Key 减少凭据面；克隆固定人格音色服务全端一致（第 4 节）；**Edge-TTS 只作降级**——2026-10 起非官方接口风控 403 频发（[v3.5-plus](https://www.qianwenai.com/models/cosyvoice-v3.5-plus)、[Edge-TTS 风控](https://github.com/NousResearch/hermes-agent/issues/140990)） |
+| T | `deepseek-chat`（`DEEPSEEK_MODEL` 可覆盖） | DeepSeek V4 系分工：`deepseek-flash`（V4.1，带视觉）日常陪伴；`deepseek-v4-pro`（thinking）每周记忆整理/反思批处理（Batch + 缓存） | 1M 上下文、最大输出 384K；闲时半价（工作日 12–14/18 点后及周末节假日）恰覆盖陪伴高峰；无官方语音，语音一律走 C 档（[定价](https://api-docs.deepseek.com/quick_start/pricing)） |
+| 嵌入 | 未用（`MemoryCurator` 为词项匹配） | DashScope `text-embedding-v4`（Qwen3 底座，64–2048 维自定义，¥0.5/M）+ `qwen3-rerank`；自托管 BGE-M3（8k 上下文，dense+sparse）降本备选 | 仅用于 3.4 混合召回，非实时路径（[text-embedding-v4](https://www.qianwenai.com/models/text-embedding-v4)） |
 
-> QQ 侧接入以 **OneBot 11 外置适配器**（NapCat/Lagrange 等，部署在云端宿主机、独立进程）为默认路线，官方机器人 API 仅在有企业主体与合规需求时评估；适配器对智能层只暴露 `Incoming`（[已测试] 契约），账号安全与平台风控责任在适配器侧，详见 3.3 与 [security.md](security.md)。
+**QQ 接入双轨（2026-10 调研修订）**：
+
+- **官方 Bot API 为主通道**：个人可申请、稳定不封号；被动回复限时限量（单聊 60 min 内 4 条、群聊 5 min 内 5 条），主动消息单用户日限且可被用户一键关闭；**is_wakeup 互动召回**——用户对话后 30 天内按「当天 / 1–3 / 3–7 / 7–30 天」四周期各 1 条，天然适配陪伴式回访节奏，直接作为第 5 节频控的平台侧坐标；语音走 msg_type 7 富媒体（先上传 file_info）（[官方文档](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)）。
+- **OneBot 11 外置适配器（NapCat/Lagrange）为实验通道**：支持语音条与任意主动消息，但新版 QQ 风控致频繁掉线、个人号封号风险常驻（[NapCat issue](https://github.com/NapNeko/NapCatQQ/issues/1728)）；须隔离主账号、只用测试号配对、**不绑定主记忆库**。
+- 两轨对智能层都只暴露 `Incoming` 契约 [已测试]；账号安全与平台风控责任在适配器侧，见 3.3 与 [security.md](security.md)。
 
 ## 3. 记忆同步
 
@@ -124,8 +129,8 @@ sequenceDiagram
   DB-->>OBJ: 连续复制（WAL）+ 定期冷快照
 ```
 
-- **阶段 A（现在，单宿主机）**：电话桥、QQ 适配器、行动闭环全部作为云端宿主机上的进程/线程直连同一个库。`WHALE_MEMORY_DB` 指向该库即为这个形态 [已有代码]；QQ 适配器同机部署 [规划]。**没有网络同步问题，一致性天然成立**——这是本项目规模下的正确复杂度。
-- **阶段 B（多宿主机 / 多 owner 才启动）**：记忆升级为云端 REST API——owner 鉴权、`MemoryRecord` append-only 写入、服务端分配单调 seq、删除走 tombstone 可审计；设备端只持**只读缓存 + 追加上传队列**；冲突策略从简：**以服务端为准，客户端重放**。[规划]
+- **阶段 A（现在，单宿主机）**：电话桥、QQ 适配器、行动闭环全部作为云端宿主机上的进程/线程直连同一个库。`WHALE_MEMORY_DB` 指向该库即为这个形态 [已有代码]；QQ 适配器同机部署 [规划]。**没有网络同步问题，一致性天然成立**——这是本项目规模下的正确复杂度，也与行业结论一致：各类 SQLite 同步引擎最终都走向「服务端单写者 + 端侧只读缓存」（[参考](https://github.com/EpicenterHQ/epicenter/blob/main/docs/articles/every-sqlite-sync-engine-ends-up-server-authoritative.md)）。
+- **阶段 B（多宿主机 / 多 owner 才启动）**：记忆升级为云端 REST API——owner 鉴权、`MemoryRecord` append-only 写入、服务端分配单调 seq、删除走 tombstone 可审计；设备端只持**只读缓存 + 追加上传队列**；冲突策略从简：**以服务端为准，客户端重放**。owner 隔离用 per-owner 命名空间 + 信封加密；注意端到端加密后云端无法做向量检索，折中为**原文密文存储、向量索引留在宿主机私库**。[规划]
 - **明确不做**：多端直接共享/同步 SQLite 文件（dual-brain.md 已禁止）；双向自动合并；把 `accepted` 当已读。
 
 ### 3.3 各端写入协议
@@ -141,7 +146,7 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 
 ### 3.4 召回升级（非实时路径）
 
-现状 `MemoryCurator` 是中文双字片段词项匹配 [已测试]，够用但召回面窄。[规划] P1 引入**混合召回**：嵌入向量（BGE-M3 自托管或 DashScope text-embedding）+ 词项得分做 RRF 融合；仍只服务 T 档（QQ 长对话、草稿、整理），**R 档电话不依赖语义召回**（避免延迟与外部依赖）；召回结果继续过「证据 + 授权」过滤，只召回有 `evidence_id` 的确认事实。
+现状 `MemoryCurator` 是中文双字片段词项匹配 [已测试]，够用但召回面窄。[规划] P1 引入**混合召回**：嵌入向量（DashScope `text-embedding-v4`，512–1024 维，或自托管 BGE-M3）+ `qwen3-rerank` 重排 + 词项得分 RRF 融合；仍只服务 T 档（QQ 长对话、草稿、整理），**R 档电话不依赖语义召回**（避免延迟与外部依赖）；召回结果继续过「证据 + 授权」过滤，只召回有 `evidence_id` 的确认事实。
 
 ## 4. 人格维持
 
@@ -179,6 +184,7 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 2. **跨渠道统一预算** [规划，P1]：`hud / phone_notice / direct_message / call` 共享每日预算与 importance 优先队列；低 importance 候选**聚合成 digest 卡**（早晚各一次封顶），高 importance 才单发；避免"每个渠道各自克制、加起来很吵"。
 3. **主题级去重** [规划，P1]：draft 级幂等已有；对 discovery 候选按主题指纹去重，防止同一话题换个 draft_id 再扰。
 4. **周报可观测** [规划，P1]：发送量、approve 率、反馈分布、`deferred/over_budget` 计数、模型成本，经 QQ 或卡片发给 owner——"不多不少"要可度量才可调节。
+5. **借鉴成熟实践**（2026-10 调研）：MaiBot 的 `talk_value` 发言价值门槛 + 分时段规则 + `no_action_backoff`（连续无回应自动放慢）是当前开源陪伴 bot 最完整的「该不该说话」设计（[文档](https://docs.mai-mai.org/faq/chat-and-reply)）；Android 通知渠道分级——闲聊/低价值走 IMPORTANCE_LOW、来电/紧急走高渠道且用户可覆写（[官方](https://developer.android.com/develop/ui/views/notifications/channels)）；QQ 端直接以官方 is_wakeup 四周期召回作为主动回访的平台坐标（见 2.4）。
 
 ### 5.3 验收口径
 
@@ -192,7 +198,7 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 
 | 层 | 方案 | 状态 |
 |----|------|------|
-| 连续备份（推荐） | **Litestream** 复制 WAL 到 S3 兼容对象存储（大陆：阿里 OSS / 腾讯 COS；境外：Cloudflare R2）；快照间隔 ≤ 5 min；保留：7 天连续 + 12 周周备 + 12 个月月备；支持 PITR | [规划，P1] |
+| 连续备份（推荐） | **Litestream 0.5.x**（2025-10 恢复维护、Fly.io 接手；LiteFS 已停滞，新项目不选）持续复制 WAL 到 S3 兼容对象存储（大陆：阿里 OSS ≈¥0.12/GB/月、腾讯 COS；境外：Cloudflare R2 $0.015/GB/月且出口免费）；快照间隔 ≤ 5 min；支持时间点恢复 PITR（[0.5 发布](https://lobste.rs/s/2ib77w/litestream_v0_5_0_is_here) · [restore 文档](https://litestream.io/reference/restore/)） | [规划，P1] |
 | 冷快照（最低要求） | cron：`sqlite3 whale.db "VACUUM INTO '/backup/whale-YYYYmmdd-HHMM.db'"` → `rclone`（**crypt 远程，客户端加密**）上传 → 本地轮转删除 | [规划，P0] |
 | 导出契约 | `whale_core.memory.backup`：`records` 表 ⇄ **JSONL**（每行一个 `MemoryRecord` 形状），支持按 tag/时间窗部分导出与导入——满足"用户要求删除/迁移/审计"与恢复校验 | [规划，P0] |
 | 恢复演练 | 每月：从备份恢复到临时库 → `PRAGMA integrity_check` → 计数比对 → 跑 pytest 冒烟；演练记录归档 | [规划，P1] |
@@ -203,6 +209,7 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 - 对象存储凭据（`OSS_*` / `R2_*`）只在云宿主机 env；备份桶私有读写 + 服务端加密 + 客户端加密双保险；恢复命令写入运维手册（占位符形式），**不入库任何真实桶名/路径**。
 - 恢复语义：整库恢复（PITR/快照）或按 JSONL 局部导入；导入走与写入相同的 append-only 协议，不静默覆盖既有确认事实。
 - 配置快照：`env` 模板（无值）与 `WHALE_MODEL_PROFILE` 结构随代码库版本化，真实值永远只在宿主机。
+- 保留与成本：轮转按 **日×7 / 周×4 / 月×12**；聊天记录 + 转写文本 <10 GB 时月存储成本 <¥2（[价格对比](https://linux.do/t/topic/693147)、[R2 定价](https://developers.cloudflare.com/r2/pricing/)）。
 
 ## 7. 语义合适
 
@@ -238,7 +245,7 @@ golden set（离线 fixtures，进 CI）+ 抽样 LLM-judge（人格/语气/边�
 | 1 | canonical 库落云宿主机 + 冷快照 cron（`VACUUM INTO` + rclone crypt + 轮转） | 杀库后能从最近快照完整恢复，integrity_check 通过 |
 | 2 | `whale_core.memory.backup`：records ⇄ JSONL 导出/导入 | pytest 覆盖：全量/按 tag 往返一致；导入不覆盖已确认事实 |
 | 3 | Omni instructions 由 `WhalePersona` 渲染生成 | 同一 persona 下电话与文字自我介绍一致；taboos 出现在 R 档指令中 |
-| 4 | QQ 适配器骨架：OneBot 外置进程 → `Incoming(source=qq)` → `OwnerChannelRegistry` → `CloudActionLoop`/`WhaleCompanion` → 回复；默认关 | 未配对账号消息被丢弃且有台账；配对账号回声测试通过；CI 离线 mock 覆盖 |
+| 4 | QQ 实验通道骨架：OneBot 外置进程（测试号、与主账号隔离）→ `Incoming(source=qq)` → `OwnerChannelRegistry` → `CloudActionLoop`/`WhaleCompanion` → 回复；默认关、不绑定主记忆库 | 未配对账号消息被丢弃且有台账；配对账号回声测试通过；CI 离线 mock 覆盖 |
 | 5 | 反馈调权（roadmap P1-3 落地） | `irrelevant` 后窗口内 daily_limit 减半可观测；调整全部入台账可还原 |
 
 ### P1（联调期）
@@ -247,7 +254,8 @@ golden set（离线 fixtures，进 CI）+ 抽样 LLM-judge（人格/语气/边�
 2. 混合召回（嵌入 + 词项 RRF，仅 T 档路径）；
 3. 跨渠道统一预算 + digest 聚合 + 主题去重；
 4. 人格漂移抽样评估 + 语义 golden set 进 CI；
-5. R 档熔断降级自动化 + 成本记账周报。
+5. R 档熔断降级自动化 + 成本记账周报；
+6. QQ 官方 Bot API 主通道适配器：被动回复（单聊 60 min 4 条限额内）、is_wakeup 四周期主动召回、msg_type 7 语音消息。
 
 ### P2（硬件/多端到位后）
 
@@ -258,3 +266,5 @@ golden set（离线 fixtures，进 CI）+ 抽样 LLM-judge（人格/语气/边�
 ## 10. 相关文档
 
 [dual-brain.md](dual-brain.md)（双脑分工与延迟红线） · [framework-status.md](framework-status.md)（三层可推进状态） · [companion-roadmap.md](companion-roadmap.md)（验收表） · [companion-pipelines.md](companion-pipelines.md)（运行闭环） · [contracts.md](../whale-core/docs/contracts.md)（事件/意图契约） · [voip-bridge.md](voip-bridge.md) 与 [audio-bridge README](../infra/call-bridge/audio-bridge/README.md)（管线细节） · [cloud-push.md](cloud-push.md)（上镜通道） · [security.md](security.md)
+
+> 外部模型型号、价格、平台风控与工具维护状态均为 **2026-10 公开调研快照**（来源已内联于各表格），只作选型参考；部署前以厂商官网复核为准，本文不担保任何第三方服务的持续可用性。调研补充参考：[MaiBot 数据导出接口](https://docs.mai-mai.org/develop/statistics-io)、[PowerSync/CRDT 对比](https://github.com/liveblocks/liveblocks/blob/main/docs/pages/compare/liveblocks-vs-powersync.mdx)、[astrbot 主动消息插件](https://github.com/Pancakes-Labs/astrbot_plugin_proactive_chat)。
