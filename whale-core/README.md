@@ -188,6 +188,22 @@ assert all(i.kind != "place_call" for i in d2.intents) and r2 == []
 
 关键类型：`ProactiveCallPlanner`、`PhoneControlGateway`、`CompositeActionGateway`、`AmbientEventTags` / `extract_ambient_events`；`SituationBrief.ambient_note`。
 
+## Companion Life（可测试的新能力，非生产渠道）
+
+新增 `memory/curation.py` 和 `life/{state,discovery,initiative,channels,runtime}.py`，将“鱼的记忆、内部状态、主动搭话、B站生活、多端接入”转化为独立协议与保守执行门槛。完整意图见 [功能规范](../docs/companion-intents.md)，组合调用与依赖见 [运行闭环](../docs/companion-pipelines.md)，真实可用性以 [验收表](../docs/companion-roadmap.md) 为准。
+
+```bash
+cd whale-core
+python -m pytest tests/test_life_memory.py tests/test_life_pipelines.py -q
+python examples/life_scenario.py
+```
+
+- `MemoryCurator` 的长期记忆必须显式确认，带 `evidence_id` 并可删除；`WhaleCompanion(..., curator=...)` 才使用此安全检索路径。
+- `InnerStateStore` 只是角色表达、兴趣与未尽话题元数据；不代表 AI 真实感情。
+- `DiscoveryPlanner` 不访问 B站或其他网站，只将经过外部适配器提供的可信 URL/标题转换成候选。
+- `ProactiveOutbox` 保守默认关闭、按渠道授权和审批后才调用注入的发送器；`accepted` 只表示渠道接受，不等于用户已读。
+- `OwnerChannelRegistry` 只验证显式绑定，QQ/OneBot 的网络接入与账号认证尚未实现。
+
 ## 安全
 
 - 禁止写入真实公网 / Tailscale IP、Token、密钥、本机用户路径。  
