@@ -338,24 +338,8 @@ def handle_agent(conn, addr, capture_dir: Path, beep: bool) -> None:
     stop = threading.Event()
     playing = threading.Event()
     vad = EnergyVAD()
-    # Optional nonblocking memory relay. No DeepSeek/SQLite work on Omni callback thread.
-    transcript_recorder = None
-    call_session_id = uuid4().hex
-    memory_path = os.environ.get("WHALE_MEMORY_DB", "").strip()
-    if memory_path:
-        try:
-            import sys as _sys
-            from pathlib import Path as _Path
-            _core_src = _Path(__file__).resolve().parents[3] / "whale-core" / "src"
-            if _core_src.is_dir() and str(_core_src) not in _sys.path:
-                _sys.path.insert(0, str(_core_src))
-            from whale_core.memory.sqlite_store import SqliteMemoryStore
-            from whale_core.core.companion import RealtimeTranscriptRecorder
-            _memory_store = SqliteMemoryStore(memory_path)
-            transcript_recorder = RealtimeTranscriptRecorder(_memory_store)
-        except Exception as ex:
-            print(f"[omni] memory relay unavailable: {type(ex).__name__}", flush=True)
-            transcript_recorder = None
+    # The cascade agent is a fallback: it does not publish memory events yet.
+    # Never allocate an unused transcript worker or SQLite connection here.
     sys_prompt = SYSTEM_PROMPT
     if tools_enabled():
         sys_prompt = SYSTEM_PROMPT.rstrip() + " " + tools_instructions_addon()

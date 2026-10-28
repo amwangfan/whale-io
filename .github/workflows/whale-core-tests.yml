@@ -1,7 +1,7 @@
 name: whale-core tests
 on:
   push:
-    paths: ['whale-core/**', '.github/workflows/whale-core-tests.yml']
+    paths: ['whale-core/**', 'infra/call-bridge/audio-bridge/**', '.github/workflows/whale-core-tests.yml']
   pull_request:
     paths: ['whale-core/**', '.github/workflows/whale-core-tests.yml']
 jobs:
@@ -12,6 +12,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install -e "./whale-core[dev]"
-      - run: python -m pytest whale-core/tests -q
+      - run: python -m pip install -e "./whale-core[dev]" -r infra/call-bridge/audio-bridge/requirements.txt
+      - run: python -m pytest whale-core/tests infra/call-bridge/audio-bridge/tests -q
       - run: python whale-core/examples/life_scenario.py
