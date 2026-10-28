@@ -55,3 +55,5 @@ flowchart LR
 | 装实验签名宿主 | [apk-install.md](apk-install.md) |
 | VoIP 来电 / AI 通话 | [voip-bridge.md](voip-bridge.md) |
 | 什么不能提交 | [security.md](security.md) |
+
+三层优先级与阻塞见 [`framework-status.md`](framework-status.md)。

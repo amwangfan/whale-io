@@ -5,6 +5,7 @@ from whale_core.actions.intents import (
     NavigateHint,
     PhoneAction,
     PlaceCall,
+    ShellWhitelist,
     ShowCard,
     Speak,
 )
@@ -14,6 +15,7 @@ from whale_core.actions.gateway import (
     CompositeActionGateway,
     HttpDashboardGateway,
     LocalBridgeGateway,
+    MockHttpActionGateway,
     NullActionGateway,
     PhoneControlGateway,
 )
@@ -25,11 +27,13 @@ __all__ = [
     "PhoneAction",
     "NavigateHint",
     "AmbientListen",
+    "ShellWhitelist",
     "ActionGateway",
     "NullActionGateway",
     "HttpDashboardGateway",
     "LocalBridgeGateway",
     "PhoneControlGateway",
     "AmbientListenGateway",
+    "MockHttpActionGateway",
     "CompositeActionGateway",
 ]

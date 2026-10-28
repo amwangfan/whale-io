@@ -136,3 +136,28 @@ class AmbientListen:
             priority=self.priority,
             reason="ambient.listen",
         )
+
+
+@dataclass(frozen=True)
+class ShellWhitelist:
+    """声明执行 call-bridge 风格白名单工具的意图（非任意 shell）。
+
+    由云端 Actions 网关落地为 mock/HTTP 控制意图；真正执行仍在
+    infra/call-bridge 的 BRIDGE_TOOLS 白名单侧。智能层不拼命令、不读密钥。
+    """
+
+    tool_name: str
+    args: Mapping[str, Any] = field(default_factory=dict)
+    priority: int = 0
+
+    def to_intent(self) -> ActionIntent:
+        return ActionIntent(
+            kind="shell_whitelist",
+            payload={
+                "tool_name": self.tool_name,
+                "args": dict(self.args),
+                "executor": "bridge_tools_whitelist",
+            },
+            priority=self.priority,
+            reason="cloud.shell_whitelist",
+        )

@@ -65,3 +65,43 @@ curl -X POST "http://127.0.0.1:18799/v1/ring?device_id=<device>"
 - 回环无 AEC，可能有回声。  
 - 经尾网 / 公网中继时延迟上升。  
 - 与雷鸟卡片推送通路独立：VoIP 来电通了 ≠ 云推送已通。
+
+
+## Omni realtime 路径（低延迟）
+
+详表与环境变量见 [`infra/call-bridge/audio-bridge/README.md`](../infra/call-bridge/audio-bridge/README.md)。此处只留可执行要点：
+
+| 项 | 约定 |
+|----|------|
+| 模式 | `BRIDGE_MODE=omni`（默认仍是 `agent` 级联） |
+| 模型 | `qwen3.8-omni-flash-realtime`（可用 `BRIDGE_OMNI_MODEL` 覆盖） |
+| 接入 | `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=…`（无需 WorkspaceId） |
+| 鉴权 | 仅 `DASHSCOPE_API_KEY`（**env only**，不入库、不打印） |
+| 音频 | 上行 pcm16/16 kHz；下行 pcm24→16 kHz 回手机 |
+
+```bash
+BRIDGE_MODE=omni ./infra/call-bridge/audio-bridge/start.sh
+```
+
+不部署到公网，除非已有 systemd / 反代 / Token 流程（见 `infra/call-bridge/docs/public-aliyun-bridge.md`）。
+
+## BRIDGE_TOOLS 白名单
+
+设 `BRIDGE_TOOLS=1` 后启用（默认关）。**无任意 shell**，仅固定动作：
+
+| 工具名 | 语音触发例 |
+|--------|------------|
+| `what_time` | 「现在几点」 |
+| `bridge_status` | 「查一下桥状态」 |
+| `ring_fake_call` | 「打个 VoIP 来电」（实现名保留；用户文案用 VoIP 来电） |
+| `list_workspace` | 「列一下工作区」 |
+| `tail_bridge_log` | 「看桥日志」 |
+| `restart_bridge` | 「重启桥」 |
+
+路径：Omni 原生 tools（`session.update`）+ ASR 关键词路由。实现：`infra/call-bridge/audio-bridge/bridge_tools.py`。
+
+```bash
+BRIDGE_MODE=omni BRIDGE_TOOLS=1 ./infra/call-bridge/audio-bridge/start.sh
+```
+
+云端智能层只发 `shell_whitelist` 意图（见 `whale_core.cloud`），不在 whale-core 内执行这些工具。

@@ -99,6 +99,40 @@ class AmbientListenGateway:
         return receipt
 
 
+
+class MockHttpActionGateway:
+    """把意图记成「拟发送」的 HTTP 请求，默认不真连。
+
+    Base URL 仅来自构造参数或环境变量 ``WHALE_ACTIONS_HTTP_BASE``
+    （缺省 ``http://127.0.0.1:18796``）。不读、不写、不编造 Token。
+    若设置 ``WHALE_ACTIONS_HTTP_LIVE=1`` 仍不发送——本 stub 永远 mock，
+    真实 HTTPS 走 ``HttpsDashboardGateway``（需调用方注入 endpoint+token）。
+    """
+
+    def __init__(self, base_url: str | None = None) -> None:
+        import os
+
+        raw = (base_url or os.environ.get("WHALE_ACTIONS_HTTP_BASE") or "").strip()
+        self.base_url = (raw or "http://127.0.0.1:18796").rstrip("/")
+        self.last_intent: ActionIntent | None = None
+        self.last_mock: dict | None = None
+        self.dispatch_log: list[str] = []
+
+    def dispatch(self, intent: ActionIntent) -> str:
+        self.last_intent = intent
+        path = "/v1/actions/shell" if intent.kind == "shell_whitelist" else "/v1/actions/card"
+        url = f"{self.base_url}{path}"
+        body = {
+            "kind": intent.kind,
+            "payload": dict(intent.payload or {}),
+            "reason": intent.reason,
+        }
+        self.last_mock = {"method": "POST", "url": url, "json": body}
+        receipt = f"mock-http:POST:{url}:{intent.kind}"
+        self.dispatch_log.append(receipt)
+        return receipt
+
+
 class CompositeActionGateway:
     """按 intent.kind 路由到子网关。
 
@@ -107,6 +141,7 @@ class CompositeActionGateway:
     - place_call / speak → bridge
     - phone_action → phone_control
     - ambient_listen → ambient_listen stub
+    - shell_whitelist → mock_http（拟 POST，不真连）
     """
 
     def __init__(
@@ -116,6 +151,7 @@ class CompositeActionGateway:
         bridge: ActionGateway | None = None,
         phone_control: ActionGateway | None = None,
         ambient_listen: ActionGateway | None = None,
+        mock_http: ActionGateway | None = None,
         fallback: ActionGateway | None = None,
         kind_map: Mapping[str, str] | None = None,
     ) -> None:
@@ -123,6 +159,7 @@ class CompositeActionGateway:
         self.bridge = bridge or LocalBridgeGateway()
         self.phone_control = phone_control or PhoneControlGateway()
         self.ambient_listen = ambient_listen or AmbientListenGateway()
+        self.mock_http = mock_http or MockHttpActionGateway()
         self.fallback = fallback or NullActionGateway()
         self.kind_map = dict(
             kind_map
@@ -133,6 +170,7 @@ class CompositeActionGateway:
                 "speak": "bridge",
                 "phone_action": "phone_control",
                 "ambient_listen": "ambient_listen",
+                "shell_whitelist": "mock_http",
             }
         )
         self.last_intent: ActionIntent | None = None
@@ -148,6 +186,8 @@ class CompositeActionGateway:
             return self.phone_control
         if route == "ambient_listen":
             return self.ambient_listen
+        if route == "mock_http":
+            return self.mock_http
         return self.fallback
 
     def dispatch(self, intent: ActionIntent) -> str:
