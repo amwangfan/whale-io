@@ -1,0 +1,36 @@
+// SKETCH ONLY — not compiled into APK. See voip-telecom-plan.md 「拨号 1 → AI」.
+// Package would be com.nova.fakecall when implemented.
+
+/*
+1) CallAccountHelper.ensureOutgoingRegistered(ctx):
+   PhoneAccount with CAPABILITY_CALL_PROVIDER, id "nova-ai-out"
+
+2) Manifest:
+   <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+   <receiver android:name=".OutgoingOneReceiver" android:exported="true">
+     <intent-filter android:priority="999">
+       <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+     </intent-filter>
+   </receiver>
+
+3) OutgoingOneReceiver.onReceive:
+   String n = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER);
+   normalize; if emergency → return;
+   if (!"1".equals(n)) return;
+   setResultData(null);  // cancel telephony
+   Bundle e = new Bundle();
+   e.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, outHandle);
+   e.putString("bridge_host", AudioBridge.DEFAULT_HOST);
+   e.putInt("bridge_port", AudioBridge.DEFAULT_PORT);
+   tm.placeCall(Uri.fromParts("tel", "1", null), e);
+
+4) FakeConnectionService.onCreateOutgoingConnection:
+   if account is nova-ai-out && number is 1:
+     Connection c = ...; // NO PROPERTY_SELF_MANAGED
+     c.setAddress(...); c.setCallerDisplayName("AI", ...);
+     c.setAudioModeIsVoip(true);
+     c.setDialing();
+     // then setActive + AudioBridge.start
+     return c;
+   else disconnect ERROR
+*/

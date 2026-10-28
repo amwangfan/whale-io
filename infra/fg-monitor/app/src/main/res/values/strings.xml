@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nova Monitor</string>
+    <string name="monitor_channel">前台应用监测</string>
+    <string name="monitor_notif_title">正在监测前台应用</string>
+    <string name="accessibility_desc">用于实时读取当前前台窗口的包名（不采集内容）。</string>
+    <string name="btn_start">开始监测</string>
+    <string name="btn_stop">停止监测</string>
+    <string name="btn_screenshot">截图</string>
+    <string name="btn_usage_perm">打开使用情况权限</string>
+    <string name="btn_a11y_perm">打开无障碍设置</string>
+    <string name="label_fg">当前前台</string>
+    <string name="label_history">最近记录</string>
+    <string name="unknown_app">未知</string>
+</resources>
