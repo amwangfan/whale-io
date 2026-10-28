@@ -38,11 +38,12 @@ class RealtimeTranscriptRecorder:
         self.store = store
         self.events: queue.Queue[tuple[str, str, str]] = queue.Queue(maxsize=capacity)
         self._stop = threading.Event()
+        self.failed_count = 0
         self._worker = threading.Thread(target=self._run, daemon=True, name="whale-memory")
         self._worker.start()
 
     def offer(self, session_id: str, role: str, text: str) -> bool:
-        if role not in ("user", "assistant") or not text.strip():
+        if self._stop.is_set() or role not in ("user", "assistant") or not text.strip():
             return False
         try:
             self.events.put_nowait((session_id[:100], role, text[:2000]))
@@ -60,6 +61,11 @@ class RealtimeTranscriptRecorder:
                 remember_episode(self.store, summary=text, key=f"ep:call:{uuid4().hex}",
                                  tags=("call", role, f"session:{sid}"),
                                  extra={"role": role, "session_id": sid})
+            except Exception:
+                # A failed disk write must not kill the consumer thread and
+                # leave close() blocked on unfinished queue items.
+                # Keep only failure count; never log private transcript text.
+                self.failed_count += 1
             finally:
                 self.events.task_done()
 

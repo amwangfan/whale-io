@@ -79,3 +79,16 @@ def test_default_policy_never_calls_without_opt_in():
     decision, receipts = a.step([ScheduleTick(title="Hi")])
     assert decision.suppress
     assert receipts == []
+
+
+def test_recorder_disk_errors_do_not_deadlock_close():
+    from whale_core.memory.store import InMemoryStore
+    class RejectWrites(InMemoryStore):
+        def put_record(self, record):
+            raise OSError("disk unavailable")
+    recorder = RealtimeTranscriptRecorder(RejectWrites())
+    assert recorder.offer("s1", "user", "first")
+    assert recorder.offer("s1", "assistant", "second")
+    recorder.close()
+    assert recorder.failed_count == 2
+    assert recorder.offer("s1", "user", "after-close") is False

@@ -136,3 +136,12 @@ def test_echo_call_closes_without_name_error(monkeypatch):
 
     _run_call(run)
     assert errors == []
+
+
+def test_agent_mode_does_not_allocate_unused_memory_worker(monkeypatch, tmp_path):
+    """Agent has no transcript callback; it must not leak a recorder on disconnect."""
+    db = tmp_path / "should-not-exist.db"
+    monkeypatch.setenv("WHALE_MEMORY_DB", str(db))
+    monkeypatch.setattr(server, "TOKEN", "")
+    _run_call(server.handle_agent, None, False)
+    assert not db.exists()
