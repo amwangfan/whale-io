@@ -32,7 +32,7 @@ class LocalFeedStub {
                 server = ServerSocketChannel.open().apply {
                     configureBlocking(true)
                     socket().reuseAddress = true
-                    bind(InetSocketAddress(port))
+                    bind(InetSocketAddress("127.0.0.1", port))
                 }
                 Log.i(TAG, "LocalFeedStub listening on $port")
                 while (running.get()) {

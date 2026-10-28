@@ -199,10 +199,11 @@ public class SignalService extends Service {
                     .append("&wait=50");
         }
         String token = SignalPrefs.getToken(this);
-        if (token != null && token.length() > 0) {
-            ub.append("&token=").append(java.net.URLEncoder.encode(token, "UTF-8"));
-        }
         String url = ub.toString();
+        if (url.startsWith("http://") &&
+                !(url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:"))) {
+            throw new java.io.IOException("Remote signaling requires HTTPS");
+        }
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(70000);

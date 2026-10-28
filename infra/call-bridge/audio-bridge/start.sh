@@ -4,14 +4,14 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 PIDF="$DIR/bridge.pid"
 LOG="$DIR/bridge.log"
 PORT=${BRIDGE_PORT:-18799}
-HOST=${BRIDGE_HOST:-0.0.0.0}
+HOST=${BRIDGE_HOST:-127.0.0.1}
 MODE=${BRIDGE_MODE:-agent}
 
 if [[ -f "$PIDF" ]] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
   echo "already running pid=$(cat "$PIDF")"
   exit 0
 fi
-mkdir -p "$DIR/captures"
+# PCM capture disabled by default; opt in via BRIDGE_CAPTURE_DIR.
 
 # Prefer project venv (websocket-client for omni)
 if [[ -x "$DIR/.venv/bin/python" ]]; then

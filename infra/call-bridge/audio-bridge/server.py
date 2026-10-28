@@ -17,6 +17,7 @@ import argparse
 import math
 import os
 import socket
+import hmac
 import struct
 import sys
 import threading
@@ -902,8 +903,18 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
         print(f"[*] closed {peer} final {stats.snapshot()}", flush=True)
 
 
-def handle_client(conn, addr, capture_dir: Path, mode: str, beep: bool, echo: bool) -> None:
+def handle_client(conn, addr, capture_dir: Path | None, mode: str, beep: bool, echo: bool) -> None:
     try:
+        # Authenticate before HELLO, model access or PCM processing.
+        if TOKEN:
+            conn.settimeout(8)
+            typ, payload = read_frame(conn)
+            if typ != TYPE_CTRL or not payload.startswith(b"AUTH "):
+                raise PermissionError("audio authentication required")
+            if not hmac.compare_digest(payload[5:].decode("utf-8", "replace"), TOKEN):
+                raise PermissionError("audio authentication failed")
+            conn.settimeout(None)
+            conn.sendall(struct.pack("!IB", 7, TYPE_CTRL) + b"AUTH_OK")
         if mode == "echo":
             handle_echo(conn, addr, capture_dir, echo=echo, beep=beep)
         elif mode == "omni":
@@ -927,8 +938,12 @@ def main() -> int:
     ap.add_argument("--mode", choices=("echo", "agent", "omni"), default=default_mode)
     ap.add_argument("--no-echo", action="store_true", help="echo mode: do not loopback mic")
     ap.add_argument("--no-beep", action="store_true")
-    ap.add_argument("--capture-dir", default=str(Path(__file__).resolve().parent / "captures"))
+    ap.add_argument("--capture-dir", default=os.environ.get("BRIDGE_CAPTURE_DIR", ""), help="Opt-in PCM capture directory; disabled by default")
     args = ap.parse_args()
+    # TCP PCM is not encrypted. Use loopback/USB reverse or a private tunnel.
+    if args.host not in ("127.0.0.1", "::1", "localhost") and not TOKEN:
+        ap.error("BRIDGE_TOKEN required for non-loopback bind")
+    capture_dir = Path(args.capture_dir) if args.capture_dir else None
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -947,7 +962,7 @@ def main() -> int:
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             t = threading.Thread(
                 target=handle_client,
-                args=(conn, addr, Path(args.capture_dir), args.mode, not args.no_beep, not args.no_echo),
+                args=(conn, addr, capture_dir, args.mode, not args.no_beep, not args.no_echo),
                 daemon=True,
             )
             t.start()
