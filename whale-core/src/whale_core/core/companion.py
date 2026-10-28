@@ -58,4 +58,5 @@ class RealtimeTranscriptRecorder:
 
     def close(self):
         self._stop.set()
+        self.events.join()
         self._worker.join(timeout=3)

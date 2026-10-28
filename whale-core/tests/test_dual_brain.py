@@ -5,6 +5,9 @@ from whale_core.memory.continuity import remember_episode
 from whale_core.memory.store import PersonaContinuity, MemoryKind
 from whale_core.core.companion import WhaleCompanion, RealtimeTranscriptRecorder
 from whale_core.core.deepseek import DeepSeekCompanion
+from whale_core.core.agent import WhaleAgent
+from whale_core.core.types import Decision, ActionIntent
+from whale_core.perception.events import ScheduleTick
 
 class FakeDeepSeek:
     def reply(self, text, *, persona="", memories=(), history=()):
@@ -66,3 +69,13 @@ def test_deepseek_requires_key_and_https():
         pass
     else:
         assert False
+
+class SensitiveRouter:
+    def route(self, observation):
+        return Decision(intents=(ActionIntent(kind="place_call"),), rationale="test")
+
+def test_default_policy_never_calls_without_opt_in():
+    a = WhaleAgent(router=SensitiveRouter())
+    decision, receipts = a.step([ScheduleTick(title="Hi")])
+    assert decision.suppress
+    assert receipts == []

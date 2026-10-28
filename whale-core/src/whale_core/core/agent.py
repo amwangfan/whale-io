@@ -9,6 +9,7 @@ from whale_core.core.router import ModelRouter, StubModelRouter
 from whale_core.core.types import ActionIntent, Decision, Observation, SessionState
 from whale_core.initiative.policy import (
     AlwaysAllowPolicy,
+    SafeDefaultPolicy,
     DisturbancePolicy,
     InitiativePolicy,
     ProactiveCallPolicy,
@@ -54,7 +55,7 @@ class WhaleAgent:
     ) -> None:
         self.router = router or StubModelRouter()
         self.memory = memory or InMemoryStore()
-        self.policy = policy or AlwaysAllowPolicy()
+        self.policy = policy if policy is not None else SafeDefaultPolicy()
         self.gateway = gateway or NullActionGateway()
         self.session = session or SessionState()
         self.call_policy = call_policy

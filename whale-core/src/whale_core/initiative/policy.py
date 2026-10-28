@@ -19,6 +19,13 @@ class InitiativePolicy(Protocol):
         ...
 
 
+class SafeDefaultPolicy:
+    """Fail closed for sensitive intents until configured by the owner."""
+    SENSITIVE = frozenset({"place_call", "phone_action", "ambient_listen"})
+    def should_suppress(self, observation: Observation, decision: Decision) -> bool:
+        return any(intent.kind in self.SENSITIVE for intent in decision.intents)
+
+
 class AlwaysAllowPolicy:
     """测试用：从不抑制。"""
 
