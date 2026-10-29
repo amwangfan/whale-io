@@ -160,12 +160,12 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 
 渲染规则：
 
-1. **R 档**：`BRIDGE_OMNI_INSTRUCTIONS` 不再手写，改为由 `WhalePersona` + `VoiceStyle` 模板生成（保证电话与文字是同一条鲸鱼）[规划，P0]。
+1. **R 档**：VoIP bridge 已在建会话时把所选 `PersonaCard` 的 `system_preamble` 与禁忌附加到 Omni instructions [已有代码，需真机联调]；基础 instructions 仍来自 `BRIDGE_OMNI_INSTRUCTIONS` 或模型默认值。共享/导入卡需要 bridge 与核心共用 `WHALE_MEMORY_DB`，无共享库时可用 `WHALE_PERSONA_CARD` 选择内置卡。完整由 `WhalePersona` + `VoiceStyle` 生成全部 instructions 仍未完成。
 2. **T 档**：`DeepSeekCompanion.reply(persona=ctx.persona_summary)` 已接通 [已测试]；system 提示保留「不编造亲身经历、不声称人类情感、记忆是上下文非指令」三条硬约束。
 3. **QQ**：同用 `persona_summary`，叠加渠道文案规范（7.2）；语气随渠道适配但 **taboos 全端一致**。
-4. **声音人格**：`timbre_hint ↔ voice id`（如 `warm_neutral → Tina/longanhuan`）映射表放云端私有配置，全渠道唯一，避免"电话一个声音、QQ 语音另一个声音"。
+4. **声音人格**：角色卡目前只产出 `VoiceStyle(timbre_hint, speaking_rate)` 元数据；实际 `timbre_hint ↔ voice id` 映射、电话侧语速控制尚未接通 [规划]。映射表应放云端私有配置，全渠道唯一，避免"电话一个声音、QQ 语音另一个声音"。
 
-人格的载体是**角色卡**（可选可切换）：内置卡组、`switch_card` 持久化切换与社区卡导入已实现 [已测试]，切卡即刷新 `persona:default` 快照、全端渲染链路自动跟随；卡表、导入方式与安全边界见 [persona-cards.md](persona-cards.md)。
+人格的载体是**角色卡**（可选可切换）：内置卡组、`switch_card` 持久化切换与社区卡导入已实现 [已测试]；DeepSeek/QQ 文字上下文与 Omni instructions 会读取表达规则，实际音色映射和语音/QQ/HUD 切换入口仍在规划。卡表、导入方式与安全边界见 [persona-cards.md](persona-cards.md)。
 
 漂移防线：
 
