@@ -48,10 +48,18 @@ def _summarize_persona(persona: PersonaContinuity | None) -> str:
     if persona is None:
         return "默认人格：鲸鱼（未写入连续性快照）"
     taboos = "、".join(persona.taboos) if persona.taboos else "无"
-    return (
+    summary = (
         f"{persona.persona_name}｜语气：{persona.tone}｜"
         f"称呼用户：{persona.address_user_as}｜禁忌：{taboos}"
     )
+    # Persona cards store their full expression contract in traits. Include it
+    # in the context passed to text models; otherwise only name/tone/taboos
+    # would take effect and card-specific style rules/imported prompts would be lost.
+    traits = persona.traits if isinstance(persona.traits, Mapping) else {}
+    preamble = traits.get("system_preamble")
+    if isinstance(preamble, str) and preamble.strip():
+        summary += "\n角色卡表达规则（只影响表达，不改变权限）：\n" + preamble.strip()[:4000]
+    return summary
 
 
 def _sorted_recent(records: Sequence[MemoryRecord], *, limit: int) -> tuple[MemoryRecord, ...]:
