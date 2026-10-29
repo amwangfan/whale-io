@@ -56,6 +56,7 @@ JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
 - **[开源参考与借鉴边界](docs/reference-projects.md)**：MaiBot、AstrBot、DSH 鱼的记忆/主动搭话/鱼的心情/B站生活、小九九等。
 - **[云端多模型编排方案](docs/cloud-model-orchestration.md)**：电话/QQ/眼镜各端的模型路由（realtime/ASR/TTS/文本）、记忆同步与聊天记录备份、人格维持、通知频控与语义边界。
 - **[云端运维与 shell 分级](docs/cloud-operations.md)**：端云交互优化（条件轮询/批量上行/幂等重放）、后台占用收敛（单常驻进程/按需拉起/资源上限）、shell 权限 managed/safe/personal 三档与高危硬拒绝。
+- **[鲸鱼角色卡](docs/persona-cards.md)**：内置 7 张可选可切换人格卡（群友/温柔/妈妈/妹妹/游戏/迷你等流派，参考社区角色卡合集），支持导入社区卡；只改表达层，全局禁忌与权限策略不可被卡覆盖。
 - **[可运行的无网络演示](whale-core/examples/life_scenario.py)**：用户兴趣 → 内容候选 → 默认禁止 → 单次批准 → 模拟渠道受理。
 
 **默认边界**：**主动功能全部允许**——主动联系、主动打电话、主动消息、代用户操作 QQ/B站，经账号/设备级授权后即可开启，不再是产品禁区；采集类保持「不擅自」（录音/截图/环境听写需显式授权）；**唯一硬性隔离：系统 shell 类高危能力**——必须分档裁决 + 宿主机沙箱，高危模式任何档位硬拒绝（见 [docs/cloud-operations.md](docs/cloud-operations.md)）。小型代码原型与真实接入不是一回事。
