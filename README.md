@@ -55,6 +55,7 @@ JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
 - **[状态与分阶段验收](docs/companion-roadmap.md)**：区分代码已测试、设备未联调与未来目标，避免将计划说成已实现。
 - **[开源参考与借鉴边界](docs/reference-projects.md)**：MaiBot、AstrBot、DSH 鱼的记忆/主动搭话/鱼的心情/B站生活、小九九等。
 - **[云端多模型编排方案](docs/cloud-model-orchestration.md)**：电话/QQ/眼镜各端的模型路由（realtime/ASR/TTS/文本）、记忆同步与聊天记录备份、人格维持、通知频控与语义边界。
+- **[云端运维与 shell 分级](docs/cloud-operations.md)**：端云交互优化（条件轮询/批量上行/幂等重放）、后台占用收敛（单常驻进程/按需拉起/资源上限）、shell 权限 managed/safe/personal 三档与高危硬拒绝。
 - **[可运行的无网络演示](whale-core/examples/life_scenario.py)**：用户兴趣 → 内容候选 → 默认禁止 → 单次批准 → 模拟渠道受理。
 
 **默认边界**：不主动联系、不主动打电话、不擅自录音截图、不自动替用户操作 QQ/B站；部署前必须经过账号/设备级授权。小型代码原型与真实接入不是一回事。

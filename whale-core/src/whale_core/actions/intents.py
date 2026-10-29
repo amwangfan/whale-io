@@ -161,3 +161,28 @@ class ShellWhitelist:
             priority=self.priority,
             reason="cloud.shell_whitelist",
         )
+
+
+@dataclass(frozen=True)
+class ShellCommand:
+    """声明在 personal 档执行一条自由命令的意图（非高危，仅认证 owner 触发）。
+
+    分档与高危裁决在 ``whale_core.cloud.shell_policy``（智能层只裁决不执行）；
+    执行方是云宿主机沙箱 executor（非 root + systemd 隔离 + 超时强杀）。
+    """
+
+    command: str
+    tier: str = "personal"
+    priority: int = 0
+
+    def to_intent(self) -> ActionIntent:
+        return ActionIntent(
+            kind="shell_command",
+            payload={
+                "command": self.command[:2000],
+                "tier": self.tier,
+                "executor": "cloud_host_sandbox",
+            },
+            priority=self.priority,
+            reason="cloud.shell_command",
+        )

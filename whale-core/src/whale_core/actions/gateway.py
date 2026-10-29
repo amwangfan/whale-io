@@ -120,7 +120,12 @@ class MockHttpActionGateway:
 
     def dispatch(self, intent: ActionIntent) -> str:
         self.last_intent = intent
-        path = "/v1/actions/shell" if intent.kind == "shell_whitelist" else "/v1/actions/card"
+        if intent.kind == "shell_whitelist":
+            path = "/v1/actions/shell"
+        elif intent.kind == "shell_command":
+            path = "/v1/actions/shell_command"
+        else:
+            path = "/v1/actions/card"
         url = f"{self.base_url}{path}"
         body = {
             "kind": intent.kind,
@@ -141,7 +146,7 @@ class CompositeActionGateway:
     - place_call / speak → bridge
     - phone_action → phone_control
     - ambient_listen → ambient_listen stub
-    - shell_whitelist → mock_http（拟 POST，不真连）
+    - shell_whitelist / shell_command → mock_http（拟 POST，不真连）
     """
 
     def __init__(
@@ -171,6 +176,7 @@ class CompositeActionGateway:
                 "phone_action": "phone_control",
                 "ambient_listen": "ambient_listen",
                 "shell_whitelist": "mock_http",
+                "shell_command": "mock_http",
             }
         )
         self.last_intent: ActionIntent | None = None
