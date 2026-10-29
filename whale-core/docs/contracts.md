@@ -49,6 +49,25 @@ Gateway 协议：`ActionGateway.dispatch(ActionIntent) → str`。
 - `AmbientListenGateway`：回执 `stub-ambient-listen:on|off`（不碰麦克风）  
 - `CompositeActionGateway`：按 `intent.kind` 路由到上述子网关
 
+## QQ 渠道（W09 · OneBot v11 外部适配器 + WeQ SSE 入站，默认关闭）
+
+实现在 `life/qq_onebot.py`（OneBot/NapCat 传输）、`life/wq_push.py`（WeQ SSE 推送入站桥）与
+`life/qq_workflow.py`（入站 AI 工作流），纯 stdlib；协议端为 NapCat / LLOneBot 等 OneBot v11
+实现或 WeQ 桌面端（离线模式可用），地址与 token 只经本机配置注入（`infra/call-bridge/secrets/`），
+本仓不存任何真实凭据。实况运行器：`examples/qq_live_workflow.py`。
+
+| 组件 | 语义 | 智能层不做 |
+|------|------|------------|
+| `parse_onebot_message` / `OneBotInboundBridge` | 协议端消息事件 → `Incoming(channel="qq")` → registry 配对产出 `OwnerEvent` | 群聊默认拒收；未鉴权/未配对事件不进入业务 |
+| `OneBotHttpListener` | 接收协议端「HTTP POST 事件推送」；无 token 拒绝启动，默认只绑 `127.0.0.1:18798` | 不记录消息正文，不回显 token |
+| `WeQSsePushListener` | 接收 WeQ「SSE 消息推送」（`{events:[...]}`，至少一次投递）：Bearer 鉴权、msgId 有界去重、自发消息过滤、立即 ACK + 单工作线程串行消费 | 未配对来件只暴露元数据；过载丢弃计数可见不静默 |
+| `QqInboundWorkflow` | `OwnerEvent` → WhaleCompanion（记忆召回 + DeepSeek + 情节回写）→ 回复草稿进 `ProactiveOutbox` 裁决 | **不发送任何消息**；策略闸门未过不调用 AI；direct_message 逐条人工批准 |
+| `OneBotOutboundPort` | `direct_message` 草稿 → 绑定对端的 `send_private_msg`（默认 `enabled=False`） | 不群发、不换目标；受理 ≠ 送达，失败记 unknown 不重试 |
+| `NullOneBotTransport` / `HttpOneBotTransport` | 默认 stub 只记拟调用不触网 / 真实 HTTP API 客户端（注入本机配置） | 不读环境变量自动连接；token 不进日志与异常文本 |
+
+发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口。
+真实发送通道（Phase 2）：NapCat 小号或 WeQ 受控发送接口（见 `docs/research-weq-deepseek-qq.md` §6）。
+
 ## Memory
 
 | 类型 | 语义 |
