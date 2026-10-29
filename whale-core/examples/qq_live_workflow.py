@@ -96,18 +96,23 @@ def build_store(path_str: str):
 
 
 def risk_prefs() -> ProactivePrefs:
-    """风控预算：每日上限与静默时段从 secrets/env 注入（默认保守：10 条/天，22–7 点静默）。
+    """风控预算：定位是**兜底防异常**，不限制正常对话。
 
-    Phase 2 接入真实出站后，该预算由 ProactiveOutbox 在触达传输层之前强制执行；
-    发送结果 unknown 不自动重试（账本既有语义），任何风控信号出现即人工停机。
+    - DAILY_LIMIT（默认 500）：纯保险丝，防跑飞循环/自激回复把账号打成机器节奏；
+      正常一对一对话远达不到。
+    - QUIET_START/QUIET_END（默认 0/0=关闭）：静默时段是「主动搭话」的概念；
+      被动回复 owner 来件不该被它拦（对方深夜发消息说明对方在线）。
+      需要时设成不同小时数即可启用（如 23/7）。
+    Phase 2 接入真实出站后由 ProactiveOutbox 在触达传输层之前强制执行；
+    发送结果 unknown 不自动重试（账本既有语义），风控信号出现即人工停机。
     """
     from datetime import time as dtime
     return ProactivePrefs(
         enabled=True,
         allowed_channels=frozenset({"direct_message"}),
-        daily_limit=int(os.environ.get("DAILY_LIMIT", "10")),
-        quiet_start=dtime(int(os.environ.get("QUIET_START", "22"))),
-        quiet_end=dtime(int(os.environ.get("QUIET_END", "7"))),
+        daily_limit=int(os.environ.get("DAILY_LIMIT", "500")),
+        quiet_start=dtime(int(os.environ.get("QUIET_START", "0"))),
+        quiet_end=dtime(int(os.environ.get("QUIET_END", "0"))),
     )
 
 
@@ -128,6 +133,7 @@ def cmd_run(args) -> int:
     prefs = risk_prefs()
     print(f"[风控预算] 每日上限={prefs.daily_limit} 静默时段={prefs.quiet_start.hour}:00–{prefs.quiet_end.hour}:00")
     workflow = QqInboundWorkflow(store, build_brain(), prefs=prefs)
+    send_port = build_send_port()
     registry = OwnerChannelRegistry(owner_id="owner", bindings=bindings)
 
     def on_owner(event):
@@ -144,7 +150,7 @@ def cmd_run(args) -> int:
         print(f"  [AI 草稿] {result['draft_id']} verdict={result['verdict']} ({result['reason']})")
         print(f"  {result['reply'][:300]}")
         if args.auto_approve and result["verdict"] == "needs_approval":
-            dispatch_approved(store, result["draft_id"])
+            dispatch_approved(store, result["draft_id"], send_port)
         elif result["verdict"] == "needs_approval":
             print(f"  → 批准发送记录：python examples/qq_live_workflow.py approve {result['draft_id']}")
 
@@ -186,12 +192,26 @@ class ConsoleSendPort:
         return False
 
 
-def dispatch_approved(store, draft_id: str) -> str:
+def build_send_port():
+    """出站通道选择：WEQ_WEB_TOKEN + WEQ_WEB_URL + OWNER_UID 配齐 → WeQ 内置 Web 真实发送
+    （等价用户在浏览器操作自己的 WeQ；需 WeQ 完整模式）；缺任一项 → 控制台 stub。"""
+    from whale_core.life.weq_send import WeQWebSendPort
+    token = os.environ.get("WEQ_WEB_TOKEN", "").strip()
+    url = os.environ.get("WEQ_WEB_URL", "").strip()
+    uid = os.environ.get("OWNER_UID", "").strip()
+    if token and url and uid:
+        print(f"[出站] WeQ Web 真实发送已启用（{url}，目标 uid={uid[:6]}…{uid[-4:]}）")
+        return WeQWebSendPort(url, token, target_uid=uid,
+                              expected_account_uin=os.environ.get("QQ_SELF_UIN") or None)
+    print("[出站] [!] WEQ_WEB_TOKEN/WEQ_WEB_URL/OWNER_UID 未配齐 → console stub（不真实发送）")
+    return ConsoleSendPort()
+
+
+def dispatch_approved(store, draft_id: str, port=None) -> str:
     outbox = ProactiveOutbox(store)
-    prefs = ProactivePrefs(enabled=True, allowed_channels=frozenset({"direct_message"}),
-                           daily_limit=20)
+    prefs = risk_prefs()
     verdict = outbox.dispatch(draft_id, prefs, now=datetime.now(timezone.utc),
-                              port=ConsoleSendPort(), explicitly_approved=True)
+                              port=port or build_send_port(), explicitly_approved=True)
     print(f"[账本] {draft_id}: {verdict.status} ({verdict.reason})")
     return verdict.status
 

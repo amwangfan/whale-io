@@ -63,10 +63,12 @@ Gateway 协议：`ActionGateway.dispatch(ActionIntent) → str`。
 | `WeQSsePushListener` | 接收 WeQ「SSE 消息推送」（`{events:[...]}`，至少一次投递）：Bearer 鉴权、msgId 有界去重、自发消息过滤、立即 ACK + 单工作线程串行消费 | 未配对来件只暴露元数据；过载丢弃计数可见不静默 |
 | `QqInboundWorkflow` | `OwnerEvent` → WhaleCompanion（记忆召回 + DeepSeek + 情节回写）→ 回复草稿进 `ProactiveOutbox` 裁决 | **不发送任何消息**；策略闸门未过不调用 AI；direct_message 逐条人工批准 |
 | `OneBotOutboundPort` | `direct_message` 草稿 → 绑定对端的 `send_private_msg`（默认 `enabled=False`） | 不群发、不换目标；受理 ≠ 送达，失败记 unknown 不重试 |
+| `WeQWebSendPort`（`life/weq_send.py`） | `direct_message` 草稿 → WeQ 内置 Web 服务 tRPC（`account.sendElements`）真实发送；登录 token 由用户从 WeQ 设置复制注入 | 不破解、不复用助手令牌；需 WeQ 完整模式；ok=true 仅代表服务端受理 |
 | `NullOneBotTransport` / `HttpOneBotTransport` | 默认 stub 只记拟调用不触网 / 真实 HTTP API 客户端（注入本机配置） | 不读环境变量自动连接；token 不进日志与异常文本 |
 
-发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口。
-真实发送通道（Phase 2）：NapCat 小号或 WeQ 受控发送接口（见 `docs/research-weq-deepseek-qq.md` §6）。
+发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口
+（运行器 `--auto-approve` 是演示档，仍走完整账本）。真实发送已通 WeQ Web 通道验证（小号→主账号，
+result=0）；NapCat 通道与风控权衡见 `docs/research-weq-deepseek-qq.md` §6。
 
 ## Memory
 
