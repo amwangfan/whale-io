@@ -60,12 +60,22 @@ class ProactivePrefs:
     quiet_start: time = time(22)
     quiet_end: time = time(7)
     tz: str = "Asia/Shanghai"
+    # 被动回复与主动行为是两套策略（issue #13）：
+    # - passive_reply_in_quiet：被动回复（仅回应已配对 owner 的入站消息）是否豁免
+    #   静默时段。豁免的正当性：对话由 owner 发起，回复是对话延续而非打扰；
+    #   **主动行为永远不豁免**。核心默认 False（保守），由运行器显式开启并公示。
+    # - passive_daily_limit：被动回复的独立额度（防跑飞循环的保险丝），
+    #   None = 回落 daily_limit；配额计数也与主动分开（life:quota:passive:*）。
+    passive_reply_in_quiet: bool = False
+    passive_daily_limit: int | None = None
 
     def __post_init__(self) -> None:
         if not set(self.allowed_channels) <= CHANNELS:
             raise ValueError("invalid allowed channels")
         if self.daily_limit < 0:
             raise ValueError("negative daily limit")
+        if self.passive_daily_limit is not None and self.passive_daily_limit < 0:
+            raise ValueError("negative passive daily limit")
 
 
 @dataclass(frozen=True)
@@ -108,7 +118,8 @@ class ProactiveOutbox:
         return local >= start or local < end
 
     def inspect(self, draft_id: str, prefs: ProactivePrefs, *, now: datetime,
-                busy: bool = False, explicitly_approved: bool = False) -> DispatchVerdict:
+                busy: bool = False, explicitly_approved: bool = False,
+                passive_reply: bool = False) -> DispatchVerdict:
         draft = self.get(draft_id)
         if draft is None:
             return DispatchVerdict("missing", "not found", draft_id)
@@ -124,22 +135,35 @@ class ProactiveOutbox:
         if draft.expires_at is not None and now >= draft.expires_at:
             return DispatchVerdict("expired", "candidate expired", draft_id)
         local = now.astimezone(ZoneInfo(prefs.tz))
-        if self._is_quiet(local.time(), prefs) or busy:
+        quiet_exempt = passive_reply and prefs.passive_reply_in_quiet
+        if (self._is_quiet(local.time(), prefs) and not quiet_exempt) or busy:
             return DispatchVerdict("deferred", "quiet hours or busy context", draft_id)
         date = local.date().isoformat()
-        count = self.store.get(f"life:quota:{date}") or 0
-        if count >= prefs.daily_limit:
+        limit, count = self._quota_view(prefs, date, passive_reply=passive_reply)
+        if count >= limit:
             return DispatchVerdict("over_budget", "daily delivery cap", draft_id)
         # A call is always reviewed; auto_send is limited to explicitly allowed low-risk channels.
         if not explicitly_approved and (draft.channel in {"call", "direct_message"} or not prefs.auto_send):
             return DispatchVerdict("needs_approval", "human review required", draft_id)
         return DispatchVerdict("ready", "authorized and within budget", draft_id)
 
+    def _quota_view(self, prefs: ProactivePrefs, date: str, *, passive_reply: bool) -> tuple[int, int]:
+        """(额度上限, 当日已用)——被动回复走独立配额键，不与主动行为混账。"""
+        if passive_reply:
+            key = f"life:quota:passive:{date}"
+            limit = prefs.passive_daily_limit if prefs.passive_daily_limit is not None else prefs.daily_limit
+        else:
+            key = f"life:quota:{date}"
+            limit = prefs.daily_limit
+        return limit, int(self.store.get(key) or 0)
+
     def dispatch(self, draft_id: str, prefs: ProactivePrefs, *, now: datetime,
                  port: OutboundPort, busy: bool = False,
-                 explicitly_approved: bool = False) -> DispatchVerdict:
+                 explicitly_approved: bool = False,
+                 passive_reply: bool = False) -> DispatchVerdict:
         verdict = self.inspect(draft_id, prefs, now=now, busy=busy,
-                               explicitly_approved=explicitly_approved)
+                               explicitly_approved=explicitly_approved,
+                               passive_reply=passive_reply)
         if verdict.status != "ready":
             self.store.put(f"life:last_review:{draft_id}",
                            {"status": verdict.status, "reason": verdict.reason,
@@ -153,7 +177,8 @@ class ProactiveOutbox:
                         "at": now.isoformat()})
         local = now.astimezone(ZoneInfo(prefs.tz))
         date = local.date().isoformat()
-        self.store.put(f"life:quota:{date}", (self.store.get(f"life:quota:{date}") or 0) + 1)
+        quota_key = (f"life:quota:passive:{date}" if passive_reply else f"life:quota:{date}")
+        self.store.put(quota_key, (self.store.get(quota_key) or 0) + 1)
         try:
             accepted = port.send(draft)
         except Exception:

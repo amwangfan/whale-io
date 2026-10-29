@@ -137,3 +137,70 @@ def test_constructor_validation():
         WeQWebSendPort(BASE, "", target_uid=UID)
     with pytest.raises(ValueError):
         WeQWebSendPort(BASE, TOKEN, target_uid=" ")
+
+
+# ── issue #15：地址与目标校验（凭据发出之前 fail closed） ──────────────
+
+
+def test_loopback_http_allowed():
+    for url in ("http://127.0.0.1:7690", "http://localhost:7690", "http://127.0.0.5:7690"):
+        assert WeQWebSendPort(url, TOKEN, target_uid=UID).base_url == url
+
+
+def test_remote_requires_https():
+    with pytest.raises(ValueError, match="HTTPS"):
+        WeQWebSendPort("http://weq.example.com", TOKEN, target_uid=UID)
+    port = WeQWebSendPort("https://weq.example.com", TOKEN, target_uid=UID)
+    assert port.base_url == "https://weq.example.com"
+
+
+def test_bad_scheme_and_embedded_credentials_refused():
+    with pytest.raises(ValueError, match="scheme"):
+        WeQWebSendPort("ftp://127.0.0.1:7690", TOKEN, target_uid=UID)
+    with pytest.raises(ValueError, match="credentials"):
+        WeQWebSendPort("http://user:pass@127.0.0.1:7690", TOKEN, target_uid=UID)
+
+
+def test_allowed_hosts_enforced():
+    with pytest.raises(ValueError, match="allowed_hosts"):
+        WeQWebSendPort("https://weq.example.com", TOKEN, target_uid=UID,
+                       allowed_hosts=("127.0.0.1",))
+    assert WeQWebSendPort("https://weq.example.com", TOKEN, target_uid=UID,
+                          allowed_hosts=("weq.example.com",))
+
+
+@pytest.mark.parametrize("bad_uid", ["12345", "u_", "u_" + "x" * 70, "  ", "u_汉字", "U_ABCDEF"])
+def test_invalid_target_uid_refused(bad_uid):
+    with pytest.raises(ValueError, match="target_uid"):
+        WeQWebSendPort(BASE, TOKEN, target_uid=bad_uid)
+
+
+def test_unsafe_config_rejected_before_any_request():
+    opener = FakeOpener([])
+    with pytest.raises(ValueError):
+        WeQWebSendPort("http://evil.example", TOKEN, target_uid=UID, opener=opener)
+    assert opener.requests == []  # 校验先于任何凭据使用
+
+
+def test_redirects_never_followed():
+    from whale_core.life.weq_send import _NoRedirect
+    handler = _NoRedirect()
+    assert handler.redirect_request(None, None, 302, "Found", {},
+                                    "http://evil.example") is None
+    # 3xx 经 opener → login 直接失败，不发生第二个请求（凭据不跟跳转走）
+    opener = FakeOpener([FakeResponse(302, raw=b"", set_cookie="")])
+    port = WeQWebSendPort(BASE, TOKEN, target_uid=UID, opener=opener)
+    assert port.send(draft()) is False
+    assert len(opener.requests) == 1
+
+
+def test_error_messages_never_contain_token():
+    opener = FakeOpener([FakeResponse(500, raw=b"internal error")])
+    port = WeQWebSendPort(BASE, TOKEN, target_uid=UID, opener=opener)
+    with pytest.raises(WeQSendError) as exc:
+        port.login()
+    assert TOKEN not in str(exc.value)
+    for bad in ("http://evil.example", "ftp://127.0.0.1"):
+        with pytest.raises(ValueError) as exc2:
+            WeQWebSendPort(bad, TOKEN, target_uid=UID)
+        assert TOKEN not in str(exc2.value)

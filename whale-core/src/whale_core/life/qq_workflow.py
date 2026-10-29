@@ -68,7 +68,10 @@ class QqInboundWorkflow:
             channel=REPLY_CHANNEL,
         )
         proposed = self.outbox.propose(draft)
-        verdict = self.outbox.inspect(draft_id, self.prefs, now=self._now())
+        # QQ 入站回复是**被动回复**（owner 先说话）：走被动策略——静默时段是否
+        # 豁免由 prefs.passive_reply_in_quiet 显式决定，配额走独立保险丝（issue #13）。
+        verdict = self.outbox.inspect(draft_id, self.prefs, now=self._now(),
+                                      passive_reply=True)
         return {
             "draft_id": draft_id,
             "reply": reply,
