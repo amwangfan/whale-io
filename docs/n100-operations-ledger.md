@@ -108,9 +108,10 @@ QQ 升级会更换 `major.node`（subAppId 锚）与本地库结构，**必须�
 | runner 日志 | `journalctl -u qq-bot -n 50 --no-pager` |
 | 收件队列健康 | `cd /opt/whale/whale-core && python3 examples/qq_live_workflow.py --secrets … --store … --inbox … jobs`（failed>0 时 `jobs --requeue-failed` 人工恢复） |
 | 草稿/账本 | 同上换 `show` 子命令 |
-| weq-web 日志 | `/opt/whale/weq-data/logs/`（按日） |
+| weq-web 日志 | **业务日志在 `/root/.config/weq/logs/`（XDG 路径，按日）**；原生凭据/SSO 事件在 `/opt/whale/weq-data/logs/nt_helper_*.log`（完整模式下每 ~25min 一轮 `pt_fetch_client_key`，按需窗口上线后应归零）；`/opt/whale/weq-data/logs/` 下的同名主日志只是启动残片，别据它判断活跃度 |
 | 内存水位 | `systemctl status` 各 unit 的 Memory 行；总预算 5G（QQ 2G + weq-web 2G + runner 512M） |
 | 停机窗口 | 只停 `qq-bot` 不影响收消息落库（QQ+weq-web 还在写库）；重启后 inbox `recover_stale` 自动续处理，SSE 停机期间的消息以 weq-web 库监听语义为准（上线后新消息必达，窗口期旧消息可能不补推——停机尽量短） |
+| Web UI 访问 | 观察到 tailscaled 在 `100.114.93.90:7690` 有 serve 代理 → tailnet 内设备可直开 `http://100.114.93.90:7690`（weq-web 本体仍只绑 127.0.0.1，代理视角为回环、cookie 无 Secure 障碍）；若该 serve 非有意配置，用 `tailscale serve --bg` 相关命令核查/撤销 |
 
 ## 7. 立账时的待办与远程依赖
 
