@@ -33,8 +33,9 @@ class QqInboundWorkflow:
         self.store = store
         self.companion = WhaleCompanion(store, brain, curator=MemoryCurator(store))
         self.outbox = ProactiveOutbox(store)
-        self.prefs = prefs if prefs is not None else ProactivePrefs(
-            enabled=True, allowed_channels=frozenset({REPLY_CHANNEL}), daily_limit=20)
+        # Safe default: a caller must explicitly opt in to processing QQ messages.
+        # The live runner passes owner-bound, operator-configured prefs explicitly.
+        self.prefs = prefs if prefs is not None else ProactivePrefs()
         self._now = now_fn or (lambda: datetime.now(timezone.utc))
 
     def handle_owner_event(self, event: OwnerEvent) -> dict:
