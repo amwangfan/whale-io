@@ -136,9 +136,26 @@ def cmd_run(args) -> int:
     send_port = build_send_port()
     registry = OwnerChannelRegistry(owner_id="owner", bindings=bindings)
 
+    # 插件层：QQ/WeQ 注册为标准 channel 插件（docs/plugin-architecture.md §1.1/§5，
+    # §7 P1「plugin_action × ProactiveOutbox 组合模板」首个实例）。发送经 PluginGateway
+    # 风险门控（communicate：owner 台账 + 审批台账），executor 复用工作流同一个
+    # ProactiveOutbox——预算与账本不分叉。
+    from whale_core.life.qq_weq_plugin import (
+        QQ_WEQ_PLUGIN_ID, build_qq_weq_gateway, register_qq_weq_plugin, send_message_intent)
+    from whale_core.plugins import PluginRegistry
+    plugin_registry = PluginRegistry()
+    adapter, _executor = register_qq_weq_plugin(plugin_registry, port=send_port,
+                                                outbox=workflow.outbox, prefs=prefs)
+    owner_draft_ids: set = set()     # 宿主台账：产自 owner 事件的草稿（身份门下游事实）
+    approved_draft_ids: set = set()  # 宿主台账：已批准（auto-approve 档或 approve 子命令）
+    plugin_gateway = build_qq_weq_gateway(plugin_registry, owner_draft_ids=owner_draft_ids,
+                                          approved_draft_ids=approved_draft_ids)
+    print(f"[插件] {QQ_WEQ_PLUGIN_ID} channel 已注册（send_message=communicate，网关门控+共享账本）")
+
     def on_owner(event):
         print(f"\n← [owner] conv={event.conversation} msg={event.message_id} "
               f"text={event.text[:60]!r}")
+        adapter.feed(event)  # 输入侧插件事件流（WhaleAgent 型宿主经 registry.input_adapters 消费）
         try:
             result = workflow.handle_owner_event(event)
         except Exception as exc:  # AI/存储失败不打断监听
@@ -149,8 +166,12 @@ def cmd_run(args) -> int:
             return
         print(f"  [AI 草稿] {result['draft_id']} verdict={result['verdict']} ({result['reason']})")
         print(f"  {result['reply'][:300]}")
+        owner_draft_ids.add(result["draft_id"])
         if args.auto_approve and result["verdict"] == "needs_approval":
-            dispatch_approved(store, result["draft_id"], send_port)
+            approved_draft_ids.add(result["draft_id"])
+            receipt = plugin_gateway.dispatch(send_message_intent(
+                event.conversation, result["reply"], draft_id=result["draft_id"]))
+            print(f"  [插件网关] {receipt}")
         elif result["verdict"] == "needs_approval":
             print(f"  → 批准发送记录：python examples/qq_live_workflow.py approve {result['draft_id']}")
 
