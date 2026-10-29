@@ -20,7 +20,7 @@ N100 长期运行。weq-web 用的是**官方 2.3.2 linux-x64 发布包 + whalei
 | `/opt/whale/weq-web/` | weq-web 2.3.2 补丁版（server.mjs 11,640,938B；resources/bot-runtime/bot.mjs 462,143B；public/ 362 文件；native/ 与 node_modules/ 为官方 linux-x64 原件） |
 | `/etc/systemd/system/weq-web.service` | **active**：`/opt/node-v24.21.0/bin/node server.mjs`，绑 `127.0.0.1:7690`（勿改监听范围），`WEQ_DATA_DIR=/opt/whale/weq-data`，MemoryMax=2G |
 | `/opt/whale/secrets/weq-web.env` | `WEQ_TOKEN=<固定令牌>`（600；登录 weq-web 用它，**任何输出/日志不得回显**） |
-| `/opt/whale/secrets/qq_workflow.env` | runner 密钥（600）：DEEPSEEK_API_KEY/BASE_URL/MODEL、OWNER_QQ=3563425362（主账号）、QQ_SELF_UIN=3899713055（小号=本机 QQ）、OWNER_UID、DAILY_LIMIT=500 等。**其中 WEQ_SSE_TOKEN 与 WEQ_WEB_TOKEN 两行是 Windows 旧值，任务 C 中要更新** |
+| `/opt/whale/secrets/qq_workflow.env` | runner 密钥（600）：DEEPSEEK_API_KEY/BASE_URL/MODEL、OWNER_QQ=3563425362（主账号）、QQ_SELF_UIN=3899713055（小号=本机 QQ）、OWNER_UID、PASSIVE_DAILY_LIMIT=500（被动回复保险丝；主动 DAILY_LIMIT 默认 10）、QQ_LIVE_AUTOSEND=1（无人值守真实发送双开关之一，配 `--live-auto-send`，#12）等。**其中 WEQ_SSE_TOKEN 与 WEQ_WEB_TOKEN 两行是 Windows 旧值，任务 C 中要更新** |
 | `/opt/whale/whale-core/` | whale-core 代码（src/examples/tests/docs；纯 Python stdlib，无第三方依赖；python3=3.13 可直接跑） |
 | `/opt/whale/downloads/` | weq-web.tar.gz（官方原包 90MB）、weq-web-overlay.tar.gz（补丁层 6.6MB）；**linuxqq.deb 下载失败不存在**（qqdl.gtimg.cn 超时，见任务 A） |
 | `/opt/whale/weq-data/`、`/opt/whale/weq-exports/` | weq-web 数据/导出目录（配置 config.json 会出现在 weq-data） |
@@ -184,9 +184,12 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
 
    [Service]
    WorkingDirectory=/opt/whale/whale-core
-   ExecStart=/usr/bin/python3 examples/qq_live_workflow.py run --auto-approve \
+   ExecStart=/usr/bin/python3 examples/qq_live_workflow.py \
      --secrets /opt/whale/secrets/qq_workflow.env \
-     --store /opt/whale/state/qq_workflow.sqlite3
+     --store /opt/whale/state/qq_workflow.sqlite3 \
+     --inbox /opt/whale/state/qq_inbox.sqlite3 \
+     run --live-auto-send
+   UMask=0077
    Restart=on-failure
    RestartSec=10
    MemoryMax=512M
@@ -194,9 +197,14 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
    [Install]
    WantedBy=multi-user.target
    ```
-   先 `mkdir -p /opt/whale/state`。
+   先 `install -d -m 700 /opt/whale/state`（inbox 含私聊正文，目录与数据库须私有）。
+   **迁移注意（issue #12）**：`--auto-approve` 已改为纯 dry-run（不真实发送）。
+   无人值守真实发送 = `--live-auto-send` **且** `qq_workflow.env` 里加
+   `QQ_LIVE_AUTOSEND=1`（双开关，缺一 runner fail closed 退出码 2）；入站持久化
+   队列走 `--inbox`（issue #14，崩溃恢复/受控重试，`jobs` 子命令可观测）。
 3. 启动验证 `journalctl -u whale-runner -f`，横幅应含：owner 绑定 (qq,3563425362)、
-   `[出站] WeQ Web 真实发送已启用`、`[监听] http://127.0.0.1:18797/`。
+   `!! 警告：无人值守真实发送已启用`、`[策略] 主动: 上限=10/日 …| 被动回复: …`、
+   `[出站] WeQ Web 真实发送已启用`、`[inbox] 持久化队列：…`、`[监听] http://127.0.0.1:18797/`。
 4. runner 重启后 weq-web 的 SSE 推送会开始投递（debounce 2s）。
 
 ### F. 端到端验收（需要用户发一条真实消息）
@@ -204,7 +212,7 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
 用户主账号（3563425362）给小号（3899713055）发一条消息 → 10 秒内：
 `journalctl -u whale-runner -n 30` 应出现 `← [owner]` → `[AI 草稿]` →
 `[账本] qq-reply:…: accepted (sent to channel)`，且用户主账号收到鲸鱼回复。
-另测：`python3 examples/qq_live_workflow.py show --secrets … --store …` 列出账本。
+另测：`python3 examples/qq_live_workflow.py --secrets … --store … show` 列出账本。
 
 ## 4. 维护与纪律
 
@@ -217,7 +225,8 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
   --frozen-lockfile && pnpm native:fetch --no-authorization && pnpm --filter @weq/web build`
   → 用 `apps/web/dist` 覆盖 server.mjs/workers/public/resources（保留官方 native/、
   node_modules/）→ `systemctl restart weq-web`。
-- **风控纪律**：只回不主动发；DAILY_LIMIT=500 是保险丝不是配额；出现任何风控信号
+- **风控纪律**：只回不主动发；PASSIVE_DAILY_LIMIT=500 是被动回复保险丝不是配额
+  （主动 DAILY_LIMIT 默认 10/日 + 静默 22–7，#13）；出现任何风控信号
   （安全中心提示/发送连续失败）→ `systemctl stop whale-runner` 并报告用户。
 - **秘密卫生**：两个 env 文件 600；令牌/密钥永不进日志、命令行历史（用文件读入变量）、
   报告文本。

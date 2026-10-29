@@ -67,8 +67,12 @@ Gateway 协议：`ActionGateway.dispatch(ActionIntent) → str`。
 | `NullOneBotTransport` / `HttpOneBotTransport` | 默认 stub 只记拟调用不触网 / 真实 HTTP API 客户端（注入本机配置） | 不读环境变量自动连接；token 不进日志与异常文本 |
 
 发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口
-（运行器 `--auto-approve` 是演示档，仍走完整账本）。真实发送已通 WeQ Web 通道验证（小号→主账号，
-result=0）；NapCat 通道与风控权衡见 `docs/research-weq-deepseek-qq.md` §6。
+（运行器 `--auto-approve` 是 **dry-run 演示档**：影子账本走审批流，不触网、不动真实账本、
+不占额度；无人值守真实发送需 `--live-auto-send` + `QQ_LIVE_AUTOSEND=1` 双开关，issue #12）。
+被动回复与主动行为是两套预算（`PASSIVE_DAILY_LIMIT`/静默豁免仅作用于被动回复，issue #13）；
+入站 owner 消息经 SQLite 持久化 inbox（幂等/租约恢复/受控重试，issue #14）。
+真实发送已通 WeQ Web 通道验证（小号→主账号，result=0）；NapCat 通道与风控权衡见
+`docs/research-weq-deepseek-qq.md` §6。
 
 ## Memory
 
