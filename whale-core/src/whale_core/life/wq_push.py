@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import threading
 from collections.abc import Callable, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -237,6 +238,15 @@ class WeQSsePushListener:
             self._worker.start()
         listener = self
 
+        class _Server(ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address):
+                exc = sys.exc_info()[1]
+                if isinstance(exc, ConnectionError):
+                    return  # 客户端提前断开（探活/keep-alive 关闭）：正常现象，不打异常栈
+                super().handle_error(request, client_address)
+
         class _Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
@@ -268,8 +278,7 @@ class WeQSsePushListener:
             def log_message(self, *args):
                 pass  # 静默 access log：不含正文、不含 token
 
-        self._server = ThreadingHTTPServer((self.host, self.requested_port), _Handler)
-        self._server.daemon_threads = True
+        self._server = _Server((self.host, self.requested_port), _Handler)
         self._server_thread = threading.Thread(target=self._server.serve_forever,
                                                name="wq-push-listener", daemon=True)
         self._server_thread.start()

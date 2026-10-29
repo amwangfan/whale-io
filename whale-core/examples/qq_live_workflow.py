@@ -27,11 +27,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Windows 控制台默认 GBK：不可编码字符（emoji 等）降级替换，不打断运行器。
+# Windows 控制台默认 GBK：不可编码字符（emoji 等）降级替换；重定向到日志时行缓冲，
+# 保证后台运行也能实时看到事件。
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         try:
-            _stream.reconfigure(errors="replace")
+            _stream.reconfigure(errors="replace", line_buffering=True)
         except Exception:
             pass
 
