@@ -69,6 +69,7 @@ flowchart TB
 1. **T 档永不上 R 档同步路径**——电话不等 DeepSeek；转写经 `RealtimeTranscriptRecorder` 异步入库 [已测试]。
 2. **J 档规则优先**，规则不够且延迟可容忍才升级到小模型；门控（频控、鉴权）**永远不用 LLM 单独裁决**。
 3. **C 档是 R 档的回退**，也是非电话渠道（QQ 语音消息、`speak` 意图）唯一的语音合成路径。
+4. **T 档不跑工具循环**——陪伴模型需要执行操作时只产「操作意图」，经 processor 插件委托给执行器模型（如 `qwen3.8-flash`）跑多步循环，仅压缩摘要 + 回执回流陪伴上下文（**上下文隔离**：shell/命令原始输出不挤占 DeepSeek 上下文）；循环内工具调用仍走 ShellPolicy / PluginGateway 门控，执行器模型不能代批 [已测试（库级），见 [plugin-architecture.md](plugin-architecture.md) §1.2]。
 
 ### 2.2 渠道 × 任务路由表
 
@@ -269,6 +270,6 @@ golden set（离线 fixtures，进 CI）+ 抽样 LLM-judge（人格/语气/边�
 
 ## 10. 相关文档
 
-[dual-brain.md](dual-brain.md)（双脑分工与延迟红线） · [framework-status.md](framework-status.md)（三层可推进状态） · [companion-roadmap.md](companion-roadmap.md)（验收表） · [companion-pipelines.md](companion-pipelines.md)（运行闭环） · [contracts.md](../whale-core/docs/contracts.md)（事件/意图契约） · [voip-bridge.md](voip-bridge.md) 与 [audio-bridge README](../infra/call-bridge/audio-bridge/README.md)（管线细节） · [cloud-push.md](cloud-push.md)（上镜通道） · [cloud-operations.md](cloud-operations.md)（端云交互、后台占用与 shell 权限分级） · [persona-cards.md](persona-cards.md)（角色卡：可选可切换人格） · [security.md](security.md)
+[dual-brain.md](dual-brain.md)（双脑分工与延迟红线） · [framework-status.md](framework-status.md)（三层可推进状态） · [companion-roadmap.md](companion-roadmap.md)（验收表） · [companion-pipelines.md](companion-pipelines.md)（运行闭环） · [contracts.md](../whale-core/docs/contracts.md)（事件/意图契约） · [voip-bridge.md](voip-bridge.md) 与 [audio-bridge README](../infra/call-bridge/audio-bridge/README.md)（管线细节） · [cloud-push.md](cloud-push.md)（上镜通道） · [cloud-operations.md](cloud-operations.md)（端云交互、后台占用与 shell 权限分级） · [persona-cards.md](persona-cards.md)（角色卡：可选可切换人格） · [plugin-architecture.md](plugin-architecture.md)（泛化插件层：新输入/输出点） · [security.md](security.md)
 
 > 外部模型型号、价格、平台风控与工具维护状态均为 **2026-10 公开调研快照**（来源已内联于各表格），只作选型参考；部署前以厂商官网复核为准，本文不担保任何第三方服务的持续可用性。调研补充参考：[MaiBot 数据导出接口](https://docs.mai-mai.org/develop/statistics-io)、[PowerSync/CRDT 对比](https://github.com/liveblocks/liveblocks/blob/main/docs/pages/compare/liveblocks-vs-powersync.mdx)、[astrbot 主动消息插件](https://github.com/Pancakes-Labs/astrbot_plugin_proactive_chat)。

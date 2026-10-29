@@ -32,12 +32,15 @@
 whale-core/
   src/whale_core/
     core/         # 推理主循环与类型
-    memory/       # MemoryStore + ContinuityContext
+    memory/       # MemoryStore + ContinuityContext + SqliteMemoryStore + Curation
     perception/   # 事件类型；ContextReasoner → SituationBrief
     initiative/   # QuietHours / Disturbance / ProactiveCallPlanner
     actions/      # 意图 + Gateway stub（含 PhoneControl / Composite）
-    ui/           # 人格 / 语音风格 / HUD 意图
-  tests/          # smoke
+    ui/           # 人格 / 角色卡 / 语音风格 / HUD 意图
+    cloud/        # 行动闭环 + shell 权限分档（shell_policy）
+    life/         # 主动性台账 / 渠道身份 / QQ·WeQ 适配 / 内部状态
+    plugins/      # 泛化插件层：六类 manifest / registry / 风险门控 / 意图委托处理
+  tests/          # smoke + P0/P1 + life + cloud + persona + plugins
   docs/contracts.md
   docs/vision-map.md   # 原设想 → 类型落点
 ```

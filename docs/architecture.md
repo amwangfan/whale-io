@@ -13,6 +13,7 @@
 | 智能 | **Initiative** | 打扰控制 / 主动提醒策略 | `whale_core.initiative` |
 | 智能 | **Actions** | ShowCard / PlaceCall / Speak 意图 + Gateway | `whale_core.actions` |
 | 智能 | **Whale UI** | 人格、文案、语音风格、HUD 呈现意图 | `whale_core.ui` |
+| 智能 | **Plugins** | 泛化 I/O 插件契约：清单 / 注册表 / 风险门控（见 [plugin-architecture.md](plugin-architecture.md)） | `whale_core.plugins` |
 | 基础 | **Turbo-IO / dashboard** | PhoneBridge、云推送上镜、轻量 HUD 执行 | 上游 [Turbo1123/Turbo-IO](https://github.com/Turbo1123/Turbo-IO)（不在本仓） |
 | 基础 | **VoIP 来电音频桥** | 自管来电 UI + PCM 桥 | [`infra/call-bridge/`](../infra/call-bridge/) |
 | 基础 | **前台监测** | 前台 / 最近应用监测与截图 | [`infra/fg-monitor/`](../infra/fg-monitor/) |
