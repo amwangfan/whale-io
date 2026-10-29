@@ -46,7 +46,6 @@ AUTH = {"Authorization": "Bearer tok"}
 # ── SqliteInbox 单元 ────────────────────────────────────────────────
 
 
-def test_enqueue_dedup_and_claim(inbox):
 def test_database_file_is_private_on_posix(tmp_path):
     import os
     import stat
@@ -64,6 +63,7 @@ def test_invalid_lease_duration_is_rejected(tmp_path):
         SqliteInbox(tmp_path / "inbox.sqlite3", lease_seconds=0)
 
 
+def test_enqueue_dedup_and_claim(inbox):
     assert inbox.enqueue(message_id="m1", conversation="private:c1", account="100", text="hi")
     assert not inbox.enqueue(message_id="m1", conversation="private:c1", account="100", text="hi")
     job = inbox.claim_next()
