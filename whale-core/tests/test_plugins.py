@@ -226,7 +226,11 @@ def test_policy_owner_gate_applies_to_all_risk_levels() -> None:
 
 
 def test_policy_risk_matrix_owner() -> None:
-    _, policy = make_policy()
+    reg, _ = make_policy()
+    policy = PluginActionPolicy(
+        reg, max_transaction_amount=200.0, max_daily_transactions=5,
+        transaction_count_today=lambda: 0,
+    )
     assert policy.evaluate("email", "search_mailbox", is_owner=True).status == "ready"
     assert policy.evaluate("email", "send_email", is_owner=True).status == "needs_approval"
     assert policy.evaluate("email", "send_email", is_owner=True,
@@ -246,7 +250,8 @@ def test_policy_transaction_caps() -> None:
                              explicitly_approved=True, args={"amount": 10})
     assert capped.status == "denied" and "daily" in capped.reason
 
-    _, policy2 = make_policy(max_transaction_amount=200.0)
+    _, policy2 = make_policy(max_transaction_amount=200.0, max_daily_transactions=5,
+                              transaction_count_today=lambda: 0)
     ok = policy2.evaluate("shop", "purchase", is_owner=True,
                           explicitly_approved=True, args={"amount": 199})
     assert ok.status == "ready"
@@ -281,13 +286,30 @@ def test_policy_rejects_missing_or_invalid_amount_when_cap_is_configured() -> No
 
 def test_policy_daily_cap_fails_closed_without_counter() -> None:
     reg, _ = make_policy()
-    policy = PluginActionPolicy(reg, max_daily_transactions=2)
+    policy = PluginActionPolicy(reg, max_transaction_amount=200.0, max_daily_transactions=2)
     verdict = policy.evaluate(
         "shop", "purchase", is_owner=True, explicitly_approved=True,
         args={"amount": 5}, reserve_transaction=True,
     )
     assert verdict.status == "denied"
     assert "counter not configured" in verdict.reason
+
+
+def test_transaction_fails_closed_when_either_cap_is_missing() -> None:
+    reg, _ = make_policy()
+    no_amount_cap = PluginActionPolicy(
+        reg, max_daily_transactions=5, transaction_count_today=lambda: 0
+    )
+    verdict = no_amount_cap.evaluate(
+        "shop", "purchase", is_owner=True, explicitly_approved=True, args={"amount": 10}
+    )
+    assert verdict.status == "denied" and "amount cap not configured" in verdict.reason
+
+    no_daily_cap = PluginActionPolicy(reg, max_transaction_amount=200.0)
+    verdict = no_daily_cap.evaluate(
+        "shop", "purchase", is_owner=True, explicitly_approved=True, args={"amount": 10}
+    )
+    assert verdict.status == "denied" and "daily transaction cap not configured" in verdict.reason
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +375,8 @@ def test_gateway_transaction_daily_limit_reserves_before_execution() -> None:
     reg = PluginRegistry()
     spy = SpyExecutor()
     reg.register(SHOP, executor=spy)
-    policy = PluginActionPolicy(reg, max_daily_transactions=1, transaction_count_today=lambda: 0)
+    policy = PluginActionPolicy(reg, max_transaction_amount=200.0, max_daily_transactions=1,
+                                transaction_count_today=lambda: 0)
     gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True,
                        approval_verifier=lambda _intent: True)
     intent = PluginAction(plugin_id="shop", action="purchase", target="sku-1",

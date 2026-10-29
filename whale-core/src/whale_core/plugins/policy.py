@@ -118,18 +118,27 @@ class PluginActionPolicy:
                 "needs_approval", "transactions always require explicit per-item approval",
                 risk.value, plugin_id, action,
             )
+        if self.max_transaction_amount is None:
+            return PluginVerdict(
+                "denied", "transaction amount cap not configured",
+                risk.value, plugin_id, action,
+            )
         amount = _amount_of(args)
-        if self.max_transaction_amount is not None:
-            if amount is None:
-                return PluginVerdict(
-                    "denied", "transaction amount missing or invalid",
-                    risk.value, plugin_id, action,
-                )
-            if amount > self.max_transaction_amount:
-                return PluginVerdict(
-                    "denied", f"amount {amount:g} over cap {self.max_transaction_amount:g}",
-                    risk.value, plugin_id, action,
-                )
+        if amount is None:
+            return PluginVerdict(
+                "denied", "transaction amount missing or invalid",
+                risk.value, plugin_id, action,
+            )
+        if amount > self.max_transaction_amount:
+            return PluginVerdict(
+                "denied", f"amount {amount:g} over cap {self.max_transaction_amount:g}",
+                risk.value, plugin_id, action,
+            )
+        if self.max_daily_transactions is None:
+            return PluginVerdict(
+                "denied", "daily transaction cap not configured",
+                risk.value, plugin_id, action,
+            )
         if self.max_daily_transactions is not None:
             if self._txn_count is None:
                 return PluginVerdict(

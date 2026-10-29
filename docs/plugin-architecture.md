@@ -75,7 +75,7 @@ sequenceDiagram
 | 未声明 | — | denied（任何情况，含显式批准） | | |
 
 - **所有插件动作都要求认证 owner**：`PluginAction` payload 不包含 `is_owner` / `explicitly_approved`；`PluginGateway` 通过宿主注入的 `owner_verifier` / `approval_verifier` 查询可信会话与审批台账。默认 verifier 全拒绝，异常也 fail-closed。
-- **transaction 每笔单独人审**：`max_transaction_amount` 配置后，缺失/非法金额一律拒绝；`max_daily_transactions` 必须接入可用的宿主计数器，网关派发前原子预留本进程额度，避免并发超限。失败尝试保守地消耗本进程额度；不存在「auto_send 代批交易」。
+- **transaction 每笔单独人审**：单笔金额上限与每日上限都必须配置，否则一律拒绝；金额缺失/非法也拒绝。每日上限必须接入可用的宿主计数器，网关派发前原子预留本进程额度，避免并发超限。失败尝试保守地消耗本进程额度；不存在「auto_send 代批交易」。
 - 台账（`PluginActionPolicy.audit`）只记动作与裁决，**不记 args 全文**（隐私/凭据面最小化）；executor 回执限 120 字且不得含密钥（bridge_tools 脱敏同款约定）。
 - 设计说明：`plugin_action` **不进** `SafeDefaultPolicy.SENSITIVE`——它的 fail-closed 门控内嵌在 `PluginGateway`（唯一执行点），再叠加一层会把已批准动作也吞掉。
 
