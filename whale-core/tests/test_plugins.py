@@ -318,7 +318,7 @@ def test_gateway_denied_and_hold_do_not_execute() -> None:
     reg.register(WECHAT, executor=spy)
     gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True)
     denied = gw.dispatch(PluginAction(plugin_id="shop", action="purchase").to_intent())
-    assert denied.startswith("plugin-hold:shop:purchase:")
+    assert denied == "plugin-hold:shop:purchase"
     hold = gw.dispatch(PluginAction(plugin_id="wechat", action="send_message",
                                     target="friend").to_intent())
     assert hold == "plugin-hold:wechat:send_message"
