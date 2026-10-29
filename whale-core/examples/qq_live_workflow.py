@@ -95,6 +95,22 @@ def build_store(path_str: str):
     return SqliteMemoryStore(path)
 
 
+def risk_prefs() -> ProactivePrefs:
+    """风控预算：每日上限与静默时段从 secrets/env 注入（默认保守：10 条/天，22–7 点静默）。
+
+    Phase 2 接入真实出站后，该预算由 ProactiveOutbox 在触达传输层之前强制执行；
+    发送结果 unknown 不自动重试（账本既有语义），任何风控信号出现即人工停机。
+    """
+    from datetime import time as dtime
+    return ProactivePrefs(
+        enabled=True,
+        allowed_channels=frozenset({"direct_message"}),
+        daily_limit=int(os.environ.get("DAILY_LIMIT", "10")),
+        quiet_start=dtime(int(os.environ.get("QUIET_START", "22"))),
+        quiet_end=dtime(int(os.environ.get("QUIET_END", "7"))),
+    )
+
+
 def cmd_run(args) -> int:
     token = os.environ.get("WEQ_SSE_TOKEN", "")
     if not token:
@@ -109,7 +125,9 @@ def cmd_run(args) -> int:
         print(f"[配对] owner 绑定：(qq, {owner_qq}) → owner")
 
     store = build_store(args.store)
-    workflow = QqInboundWorkflow(store, build_brain())
+    prefs = risk_prefs()
+    print(f"[风控预算] 每日上限={prefs.daily_limit} 静默时段={prefs.quiet_start.hour}:00–{prefs.quiet_end.hour}:00")
+    workflow = QqInboundWorkflow(store, build_brain(), prefs=prefs)
     registry = OwnerChannelRegistry(owner_id="owner", bindings=bindings)
 
     def on_owner(event):
