@@ -192,6 +192,8 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 - 用户反馈 `not_now/irrelevant` 后，同主题在窗口期内不再出现；
 - 每一条发出的主动消息都能在台账里回答：为什么发、证据是什么、谁批准的。
 
+> **策略更新（2026-10-29，维护者决定）**：主动功能对 owner **全部放开**（含主动联系、主动电话、代操作 QQ/B站）——上述「默认配置」口径描述的是未授权时的机制行为；owner 授权后应把 `ProactivePrefs.enabled/allow_calls/allowed_channels` 全开、按需调高 `daily_limit`、按需关闭 quiet hours。放开后频控的定位从「禁止」转为「调节」，但验收底线不变：**每一次主动行为仍有台账、可反馈调节、可一键暂停**；系统 shell 类能力不随本放开而放松，硬性隔离要求见 [cloud-operations.md](cloud-operations.md) §3。
+
 ## 6. 聊天记录定期备份与恢复
 
 **备份对象**：canonical SQLite 全部内容（episodes、偏好、人格快照、台账、配额、反馈）。**只有文字**——音频字节从不入库（既有约定），因此备份不含录音。
