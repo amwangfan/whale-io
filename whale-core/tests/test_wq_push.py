@@ -5,6 +5,7 @@
 import json
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -135,6 +136,35 @@ def test_listener_pairing_dedup_and_mass():
     listener.process_payload(auth, payload(mass))
     assert listener.mass == [{"chatType": "group", "convId": "30003", "fromSeq": "1",
                               "toSeq": "900", "count": 900, "hasPreview": True}]
+
+
+def test_concurrent_duplicate_push_is_processed_once():
+    listener = RecordingListener(make_registry())
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    body = payload(sse_event(msg_id="race-1"))
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(lambda _: listener.process_payload(auth, body), range(24)))
+    assert sum(count for code, count in results if code == 200) == 1
+    assert [e.message_id for e in listener.owner_events] == ["race-1"]
+
+
+def test_queue_overflow_is_retryable_and_does_not_poison_dedup():
+    listener = WeQSsePushListener(make_registry(), expected_token=TOKEN, self_uin=SELF_UIN,
+                                   on_owner_event=lambda _e: None, async_dispatch=True)
+    for i in range(listener._events.maxsize):
+        listener._events.put_nowait(("owner", f"queued-{i}"))
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    body = payload(sse_event(msg_id="overflow-1"))
+    code, count = listener.process_payload(auth, body)
+    assert (code, count) == (503, 0)
+    assert listener.dropped == 1
+    assert "overflow-1" not in listener._seen
+
+    listener._events.get_nowait()
+    listener._events.task_done()
+    code, count = listener.process_payload(auth, body)
+    assert (code, count) == (200, 1)
+    assert "overflow-1" in listener._seen
 
 
 def test_listener_requires_token():
