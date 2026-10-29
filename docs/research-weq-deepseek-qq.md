@@ -207,6 +207,35 @@ WeQ 本地工作克隆：`E:\WhaleIO\tmp\WeQ`（已 gitignore；remote：origin=
 - WeQ 官方升级（安装器覆盖 `bot.mjs`）后：从新 tag 重建 `whaleio/bot-engine` 并重新换入，或等上游合并后直接用官方版；
 - whale-io 侧对接件（SSE 桥、适配器、运行器）全部在 whale-io 仓，不 fork WeQ 代码（许可：CC BY-NC-SA，进程隔离集成）。
 
+### 7.1 部署线第二轮：分桶落盘 + histories LRU（2026-10-29，仅 whaleio/bot-engine）
+
+上游线的 #118/#119 消除了深拷贝与每消息重读，但剩余耗时卡在**单文件 JSON 的整文件
+stringify+fsync 下限**（12MB 记忆库每次 touch 仍 ~650ms），且启动即全量常驻内存。
+这两项触碰上游的耐久性语义与默认行为（= A2，待与维护者对齐），因此**只落在部署线**：
+
+- `bucketed_store.ts`：conversations/memories 按 scope 分桶（`<name>.d/<hex(key)>.json`），
+  写入只动单键文件；惰性加载 + LRU（默认 64 桶）——多对端 bot 只驻留热 scope；
+  旧单文件首次启动自动迁移（原件保留 `.migrated`，可重入）；损坏桶拒绝加载不波及他键；
+  原子写/冻结发布/校验契约与 BotJsonFile 同款。
+- `config.json` 新增 `storage.bucketed`（部署线默认 **true**，显式 false 回到上游单文件布局）。
+- orchestrator `histories`（每对端 40 轮上下文）加 512 对端 LRU 上限，长跑不再无界增长。
+- 笔记/关系库体量小，不分桶。新增 8 项分桶专项测试；既有 bot 21 + service 48 全绿
+  （含真实 startBot 链路）。
+
+本机三路端到端实测（真引擎 + 假 NapCat/DeepSeek 端点，同一种子：1.6MB persona +
+0.6MB 对话 + 11.9MB 含向量记忆，24 条命中记忆的私聊消息，LLM 调用数三方一致=26）：
+
+| 指标 | 官方 2.3.2 | 单文件补丁（#118+#119） | whale-io 分桶 |
+| --- | ---: | ---: | ---: |
+| p50 单条延迟 | 1458ms | 706ms | **79ms（18×）** |
+| p95 / max | 1612 / 1697ms | 782 / 792ms | **97 / 144ms** |
+| 24 条总耗时 | 31.8s | 15.6s | **2.0s（16×）** |
+| 峰值 RSS | 538MB | 192MB | **153MB（-72% vs 官方）** |
+| 基线 RSS（加载后） | 140MB | 188MB | **137MB（惰性加载不全量常驻）** |
+
+迁移只落盘不灌缓存（保持惰性加载收益）；部署引擎已换入本机安装的 WeQ
+（原件备份 `bot.mjs.orig-2.3.2`）。分支 `whaleio/bot-engine` 已推 fork 备份。
+
 ## 8. 参考
 
 - WeQ 仓库/文档：<https://github.com/weq-devs/WeQ>（guide：assistant / agentlab / mcp-server /
