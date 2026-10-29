@@ -11,9 +11,9 @@
 
 | 组件 | 锚点 | 备注 |
 | --- | --- | --- |
-| whale-core 代码（N100 现行运行件） | `amwangfan/whale-io`(私有) main @ `ae0b5d6` 的快照 | 含插件层 `1e013e2`、加固 `b7f5c58`（#12–#15）、QQ/WeQ channel 插件 `ae0b5d6`（PR #18） |
+| whale-core 代码（N100 现行运行件） | **`amwangfan/whale-core`（公开仓）@ `c5f35e8` + 本地补丁** | 切源于 2026-10-30 03:11 完成（SOP A §3）；本地补丁 `patches/fullmode-window-20261030.patch` + `patches/persona-taboos-4-20261030.patch` 待回合入（见 §7） |
 | **whale-core 规范源（2026-10-30 起）** | **`amwangfan/whale-core`（公开仓）@ `c5f35e8`** | 独立发布已完成：全新历史（4 提交，零 whale-io 历史继承）、脱敏审计通过（工作区+全历史无真实 QQ 号/uid）、**270 passed + 1 skipped**、内置人设卡已换第三方卡（许可合规）。与现行运行件差异面：`ui/persona_cards.py`（回复人格风味可能微变，预期内）、runner 路径布局自适应（与 N100 目录结构兼容，已核）、`QQ_SELF_UIN` 改为必须显式配置（N100 secrets 本就显式 ✓）。**下次 SOP A 同步即切此源** |
-| N100 测试基线 | 现行快照 **274 passed**；切公开仓后 **270 passed + 1 skipped** | 任何更新后必须复跑，以对应源的基线为准 |
+| N100 测试基线 | **288 passed**（公开仓 271 + fullmode-window 17；2026-10-30） | 任何更新后必须复跑，以对应源的基线为准 |
 | weq-web 运行件 | 官方 2.3.2 linux-x64 包 + whaleio overlay | overlay 构建自 `whaleio/bot-engine` 旧尖（`efd27883` 时代）；分支现已重基到 `cf8051eb`（dev@93dd2e53 + 分桶落盘 + 桌面剥离 + 免 Go 打包链），**功能等价，不急重建**（差异=上游 tasks 特性与测试打磨，不触及生产路径） |
 | WeQ 上游 | v2.3.2（dev@`93dd2e53`，含已合并的 #118/#119 性能 PR） | 上游无新 release 前不动 |
 | nt_helper | 锚定 `nt-helper-20261027-c6df5e3`，**2026-11-26 过期** | 过期后完整模式（attach/发送）失效，离线收不受影响；Windows 侧会话已挂 11-19 提醒 |
@@ -122,8 +122,18 @@ QQ 升级会更换 `major.node`（subAppId 锚）与本地库结构，**必须�
 - [x] **已完成（2026-10-30 02:49）**：whale-core 独立公开仓 `amwangfan/whale-core` 上线——
   全新历史、脱敏审计通过（工作区+历史零真实标识）、270+1 绿、人设卡许可合规替换；
   SOP A 拉取源已改为公开仓（§3），deploy key 待办作废（公开仓无需凭据）；
-- [ ] **下一次维护动作（可与 fullmode-window 任务同批）**：按 §3 把 N100 运行件切到公开仓源
-  （rsync → pytest 270+1 → 与后续改动合并一次 restart + 一次回归消息）；
+- [x] **已完成（2026-10-30 03:11）**：按 §3 把 N100 运行件切到公开仓源（clone `c5f35e8` → rsync
+  → 本机基线 271 passed → 与 fullmode-window 合并一次 restart + 回归消息通过）；
+- [ ] **本地补丁待回合入**：`patches/fullmode-window-20261030.patch`（按需完整模式窗口：
+  `life/full_mode_window.py` + `tests/test_full_mode_window.py` 17 例 + runner 接线）与
+  `patches/persona-taboos-4-20261030.patch`（GLOBAL_TABOOS 5→4，owner 要求移除「不声称是人类」）。
+  均基于公开仓 `c5f35e8` 生成；下次 SOP A 同步（rsync --delete）会冲掉，Windows 侧收编为
+  正式提交后自然覆盖；
+- [ ] **运维注意（fullmode 窗口配套，2026-10-30 实测）**：① 勿在 WeQ UI 手动「启用完整
+  功能」——`account.requestFullMode` 写入的进程内 manualRequests 无 tRPC 可清，会让
+  `setAutoAttachQq(false)` 关窗失效（周期收割照跑）直到 weq-web 重启；② weq-web 重启后
+  账号不会自动重开（autoEnter 需 UI 触发）——headless 恢复 = tRPC `bootstrap.openAccount`
+  （dbKey 取自 `bootstrap.listAccountConfigs`），开账号后 SSE watcher 自动重启；
 - [ ] （建议，非紧急）B1 完整走一遍：N100 本地获得 overlay 重建能力，摆脱对 Windows 侧的构建依赖；
 - [ ] **2026-11-26 前必做**：SOP B2（nt_helper 到期；Windows 侧会话已挂 11-19 提醒，N100 侧也可自建 weekly timer 双保险）；
 - [ ] 东京云（aliyun-tokyo）角色 = 门面/哨兵，**永不部署 QQ 协议侧**；待用户关停 ouruestc 释放内存后，另行下达看门狗+异地备份任务书（与本账本无关，勿抢跑）；
