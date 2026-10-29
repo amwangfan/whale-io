@@ -44,11 +44,21 @@ class PluginGateway:
     def dispatch(self, intent: ActionIntent) -> str:
         if intent.kind != "plugin_action":
             return f"plugin-gateway:ignored:{intent.kind}"
-        payload: Mapping[str, Any] = intent.payload or {}
+        raw_payload = intent.payload
+        if not isinstance(raw_payload, Mapping):
+            receipt = "plugin-denied::invalid-payload"
+            self.dispatch_log.append(receipt)
+            return receipt
+        payload: Mapping[str, Any] = raw_payload
         plugin_id = str(payload.get("plugin_id") or "")
         action = str(payload.get("action") or "")
         target = str(payload.get("target") or "")
-        args = dict(payload.get("args") or {})
+        raw_args = payload.get("args") or {}
+        if not isinstance(raw_args, Mapping):
+            receipt = f"plugin-denied:{plugin_id}:{action}:invalid-args"
+            self.dispatch_log.append(receipt)
+            return receipt
+        args = dict(raw_args)
         # Authorization is resolved from trusted host state, never payload flags.
         try:
             is_owner = bool(self._owner_verifier(intent))
