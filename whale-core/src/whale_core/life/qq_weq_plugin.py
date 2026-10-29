@@ -135,7 +135,8 @@ class WeQSendExecutor:
             if not draft_id:
                 return False, "outbox mode requires draft_id"
             verdict = self._outbox.dispatch(draft_id, self._prefs, now=self._now(),
-                                            port=self._port, explicitly_approved=True)
+                                            port=self._port, explicitly_approved=True,
+                                            passive_reply=True)
             ok = verdict.status == "accepted"
             receipt = f"{verdict.status}:{verdict.reason}"
         else:

@@ -137,6 +137,25 @@ def test_executor_outbox_mode_uses_ledger_draft_and_budget():
         WeQSendExecutor(port, outbox=outbox)
 
 
+def test_executor_outbox_mode_uses_passive_quota_and_quiet_exemption():
+    store = InMemoryStore()
+    outbox = ProactiveOutbox(store)
+    outbox.propose(ProactiveDraft("night", "夜间回复", "r", ("e",),
+                                  channel="direct_message"))
+    prefs = ProactivePrefs(
+        enabled=True, allowed_channels=frozenset({"direct_message"}),
+        daily_limit=10, passive_daily_limit=2, passive_reply_in_quiet=True,
+    )
+    # 23:30 Asia/Shanghai: passive replies may continue, but active sends are quieted.
+    night = datetime(2026, 10, 30, 15, 30, tzinfo=timezone.utc)
+    port = FakePort()
+    ex = WeQSendExecutor(port, outbox=outbox, prefs=prefs, now_fn=lambda: night)
+    ok, receipt = ex.execute(SEND_ACTION, "private:u_1", {"draft_id": "night"})
+    assert ok and receipt.startswith("accepted")
+    assert store.get("life:quota:passive:2026-10-30") == 1
+    assert store.get("life:quota:2026-10-30") is None
+
+
 def test_executor_outbox_mode_port_failure_is_unknown_not_ok():
     store = InMemoryStore()
     outbox = ProactiveOutbox(store)

@@ -64,14 +64,18 @@ Gateway 协议：`ActionGateway.dispatch(ActionIntent) → str`。
 | `QqInboundWorkflow` | `OwnerEvent` → WhaleCompanion（记忆召回 + DeepSeek + 情节回写）→ 回复草稿进 `ProactiveOutbox` 裁决 | **不发送任何消息**；策略闸门未过不调用 AI；direct_message 逐条人工批准 |
 | `OneBotOutboundPort` | `direct_message` 草稿 → 绑定对端的 `send_private_msg`（默认 `enabled=False`） | 不群发、不换目标；受理 ≠ 送达，失败记 unknown 不重试 |
 | `WeQWebSendPort`（`life/weq_send.py`） | `direct_message` 草稿 → WeQ 内置 Web 服务 tRPC（`account.sendElements`）真实发送；登录 token 由用户从 WeQ 设置复制注入 | 不破解、不复用助手令牌；需 WeQ 完整模式；ok=true 仅代表服务端受理 |
-| `qq_weq_plugin`（`life/qq_weq_plugin.py`） | QQ/WeQ 的插件层标准包装（channel 类）：manifest（`qq.message` 入站 + `send_message`=communicate）、事件 adapter（有界、overflow 计数）、双模 executor（Outbox 账本模式 / 直连模式）、宿主台账 verifier 的网关工厂 | 身份/审批只查宿主台账集合，意图 payload 自declare无效；manifest 无凭据；预算与账本仍由 `ProactiveOutbox` 唯一持有 |
+| `qq_weq_plugin`（`life/qq_weq_plugin.py`） | QQ/WeQ channel 插件：`qq.message` 输入适配、`send_message` communicate 动作、宿主台账 verifier 与共享 Outbox | 真实无人值守发送经 `PluginGateway`；`--auto-approve` 仍是隔离 dry-run；固定目标与被动回复预算沿用既有端口/账本 |
 | `NullOneBotTransport` / `HttpOneBotTransport` | 默认 stub 只记拟调用不触网 / 真实 HTTP API 客户端（注入本机配置） | 不读环境变量自动连接；token 不进日志与异常文本 |
 
-发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口
-（运行器 `--auto-approve` 是演示档，仍走完整账本；插件化路径下审批先经 `PluginGateway`
-的宿主台账 verifier，executor 再复用同一 Outbox——门控与账本不分叉，见
-`docs/plugin-architecture.md` §7 已测试条目）。真实发送已通 WeQ Web 通道验证（小号→主账号，
-result=0）；NapCat 通道与风控权衡见 `docs/research-weq-deepseek-qq.md` §6。
+发送审批仍由 `ProactiveOutbox` 策略层强制：`direct_message` 渠道逐条人工批准后才触达传输端口。
+运行器 `--auto-approve` 是 **dry-run 演示档**：影子账本走审批流，不触网、不动真实账本、不占额度；
+无人值守真实发送需 `--live-auto-send` + `QQ_LIVE_AUTOSEND=1` 双开关，issue #12。
+该无人值守 QQ/WeQ 路径经 `PluginGateway` 的宿主台账 verifier，再复用同一 `ProactiveOutbox`；
+单条人工 `approve` 命令仍是显式操作。被动回复与主动行为是两套预算
+（`PASSIVE_DAILY_LIMIT`/静默豁免仅作用于被动回复，issue #13）；入站 owner 消息经 SQLite 持久化
+inbox（幂等/租约恢复/受控重试，issue #14）。
+真实发送已通 WeQ Web 通道验证（小号→主账号，result=0）；NapCat 通道与风控权衡见
+`docs/research-weq-deepseek-qq.md` §6。
 
 ## Memory
 

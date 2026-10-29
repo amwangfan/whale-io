@@ -13,17 +13,91 @@ tRPC 接口**（`/_auth/login` + `/trpc/account.sendElements`），等价于用�
 - send 返回 True 仅表示 QQ 服务端受理（ok=true），不代表已读；
 - 只做 direct_message 渠道、单一绑定对端（owner uid）；不群发、不换目标；
 - token 不进日志与异常文本。
+
+地址与目标校验（#15，凭据发出**之前**在构造期 fail closed）：
+- 仅 http/https；回环地址（127.0.0.0/8、::1、localhost）允许 HTTP，
+  **远程地址必须 HTTPS**（防 token 明文出网）；
+- 拒绝 URL 内嵌凭据（user:pass@host）；可选 ``allowed_hosts`` 白名单再收紧；
+- HTTP 重定向**一律不跟随**（3xx 直接失败）——防止登录凭据/会话 cookie
+  被跳转到未授权主机；
+- ``target_uid`` 必须是显式配置的固定 owner uid（``u_`` 前缀格式校验），
+  发送目标永远来自构造配置，不从入站内容动态推导。
 """
 from __future__ import annotations
 
+import ipaddress
 import json
+import re
 import urllib.error
+import urllib.parse
 import urllib.request
-from typing import Callable
+from typing import Callable, Sequence
 
 from whale_core.life.initiative import ProactiveDraft
 
 MAX_TEXT_CHARS = 4000
+
+# owner uid 形状（WeQ c2c uid 为 u_ 前缀）；只认显式配置的固定目标
+UID_RE = re.compile(r"^u_[A-Za-z0-9_-]{2,62}$")
+LOOPBACK_HOSTS = frozenset({"localhost", "::1"})
+
+
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_base_url(raw: str, *, allowed_hosts: Sequence[str] | None = None) -> str:
+    """校验 WeQ Web 服务地址；返回规范化（去尾斜杠）的 URL。不安全即 ValueError。
+
+    规则：scheme 仅 http/https；不得内嵌凭据；回环允许 HTTP，远程必须 HTTPS；
+    给了 allowed_hosts 则主机必须在白名单内。错误信息只含 scheme/host，不含凭据。
+    """
+    url = (raw or "").strip().rstrip("/")
+    parts = urllib.parse.urlsplit(url)
+    if parts.query or parts.fragment or "?" in url or "#" in url:
+        raise ValueError("WEQ_WEB_URL must not include query or fragment")
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"WEQ_WEB_URL scheme must be http/https, got {parts.scheme!r}")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("WEQ_WEB_URL must not embed credentials (user:pass@host form)")
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        raise ValueError("WEQ_WEB_URL missing host")
+    if parts.scheme == "http" and not _is_loopback(host):
+        raise ValueError(
+            f"remote WEQ_WEB_URL must use HTTPS, plaintext HTTP refused (host={host})"
+        )
+    if allowed_hosts:
+        allow = {h.strip().lower() for h in allowed_hosts if h.strip()}
+        if host not in allow:
+            raise ValueError(f"WEQ_WEB_URL host {host!r} not in allowed_hosts")
+    return url
+
+
+def validate_target_uid(uid: str) -> str:
+    """校验固定目标 uid 形状；不回显取值（避免日志/异常带出身份材料）。"""
+    value = (uid or "").strip()
+    if not UID_RE.fullmatch(value):
+        raise ValueError(
+            "target_uid invalid: expect the explicitly configured owner uid (u_ prefix, "
+            "[A-Za-z0-9_-], total length 4-64)"
+        )
+    return value
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """3xx 一律不跟随：redirect_request 返回 None → urllib 抛 HTTPError。
+
+    登录 token 与会话 cookie 只会发给构造期校验过的 base_url 主机。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        return None
 
 
 class WeQSendError(RuntimeError):
@@ -39,22 +113,25 @@ class WeQWebSendPort:
     def __init__(self, base_url: str, token: str, *, target_uid: str,
                  expected_account_uin: str | None = None,
                  expected_account_config_id: str | None = None,
+                 allowed_hosts: Sequence[str] | None = None,
                  timeout: float = 15.0,
                  opener: Callable[..., object] | None = None) -> None:
-        if not base_url.strip():
-            raise ValueError("base_url required")
         if not token:
             raise ValueError("token required (从 WeQ 设置 → WeQ 服务 → Web 与 Remote 复制)")
-        if not target_uid.strip():
-            raise ValueError("target_uid required (owner 的 QQ uid，u_ 开头)")
-        self.base_url = base_url.rstrip("/")
-        self.token = token
-        self.target_uid = target_uid
+        # 安全校验先于任何凭据保存/发出（#15）：地址不合法直接构造失败
+        self.base_url = validate_base_url(base_url, allowed_hosts=allowed_hosts)
+        self.target_uid = validate_target_uid(target_uid)
         self.expected_account_uin = expected_account_uin
         self.expected_account_config_id = expected_account_config_id
         self.timeout = timeout
         # urlopen 的第二位置参数是 data 而非 timeout：必须包一层关键字传参。
-        self._opener = opener or (lambda req, t: urllib.request.urlopen(req, timeout=t))
+        # 默认 opener 禁用重定向跟随（_NoRedirect），凭据不外流到未授权主机。
+        if opener is not None:
+            self._opener = opener
+        else:
+            no_redirect = urllib.request.build_opener(_NoRedirect)
+            self._opener = lambda req, t: no_redirect.open(req, timeout=t)
+        self.token = token
         self._cookie: str | None = None
         self.last_receipt: dict | None = None
 

@@ -13,6 +13,10 @@ HTTP 监听器（载荷 `{events:[...]}`，Bearer 鉴权，失败指数退避重
 - HTTP 立即 ACK，事件经有界队列由单一工作线程串行消费：AI 耗时不阻塞 WeQ 推送
   （其超时仅 10s），且同一所有者的事件天然按到达序处理。
 - 不打日志正文；回调只拿到配对结果，未配对事件仅暴露元数据。
+- **持久化 inbox（#14）**：配置 ``inbox=SqliteInbox(...)`` 后，owner 消息先落
+  SQLite 任务队列（message_id 主键幂等）再派发；处理失败按 attempts 上限受控
+  重试、超限落 failed 可观察；进程重启 ``recover_stale`` 收回租约过期的任务——
+  「已 ACK 未处理」窗口崩溃不丢消息。未配对事件与 mass 元数据**不落盘**。
 """
 from __future__ import annotations
 
@@ -24,6 +28,7 @@ from collections.abc import Callable, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from whale_core.life.channels import Incoming, OwnerChannelRegistry, OwnerEvent
+from whale_core.life.inbox import SqliteInbox
 from whale_core.life.qq_onebot import MAX_TEXT_CHARS, bearer_authenticated
 
 DEFAULT_WQ_PUSH_HOST = "127.0.0.1"
@@ -115,7 +120,8 @@ class WeQSsePushListener:
                  on_mass: Callable[[dict], None] | None = None,
                  accept_group: bool = False,
                  host: str = DEFAULT_WQ_PUSH_HOST, port: int = DEFAULT_WQ_PUSH_PORT,
-                 async_dispatch: bool = True) -> None:
+                 async_dispatch: bool = True,
+                 inbox: SqliteInbox | None = None) -> None:
         if not expected_token:
             raise ValueError("WeQSsePushListener requires a non-empty token (fail closed)")
         if not str(self_uin):
@@ -130,6 +136,8 @@ class WeQSsePushListener:
         self.host = host
         self.requested_port = port
         self.async_dispatch = async_dispatch
+        self.inbox = inbox
+        self.recovered = 0  # start() 时收回的过期租约任务数（崩溃恢复可见性）
         self._seen: dict[str, None] = {}
         self._ingest_lock = threading.RLock()  # ThreadingHTTPServer may ingest retries concurrently.
         self._dropped = 0
@@ -180,6 +188,20 @@ class WeQSsePushListener:
                     else:
                         overloaded = True
                     continue
+                if self.inbox is not None:
+                    # 持久化优先（#14）：先落库（message_id 主键幂等），再派发。
+                    # 重复投递（上游重试 / 重启后重推）不会二次入队，只消化；
+                    # 唤醒只是降低延迟的提示，库才是真源（队列满也不丢任务）。
+                    self.inbox.enqueue(
+                        message_id=owner_event.message_id,
+                        conversation=owner_event.conversation,
+                        account=incoming.account,
+                        text=owner_event.text,
+                    )
+                    self._emit_wake(owner_event.message_id)
+                    self._mark_seen(incoming.message_id)
+                    accepted += 1
+                    continue
                 if self._emit_owner(owner_event):
                     self._mark_seen(incoming.message_id)
                     accepted += 1
@@ -198,6 +220,43 @@ class WeQSsePushListener:
                 return False
         self.on_owner_event(event)
         return True
+
+    def _emit_wake(self, message_id: str) -> None:
+        """持久化 inbox 模式的派发唤醒：队列只是提示，**库才是真源**。
+
+        同步模式（测试）直接排空；异步模式放一个 ("job", id) 唤醒项，
+        队列满也不丢任务——工作线程空转轮询会兜底消化（含重试与恢复）。
+        """
+        if not self.async_dispatch:
+            self._drain_inbox()
+            return
+        try:
+            self._events.put_nowait(("job", message_id))
+        except queue.Full:
+            pass
+
+    def _drain_inbox(self) -> None:
+        """从持久化 inbox 认领并处理任务；失败只记错误**类名**（不落正文）。"""
+        if self.inbox is None:
+            return
+        while not self._stop.is_set():
+            job = self.inbox.claim_next()
+            if job is None:
+                return
+            event = OwnerEvent(
+                owner_id=self.registry.owner_id,
+                channel="qq",
+                conversation=job.conversation,
+                message_id=job.message_id,
+                text=job.text,
+            )
+            try:
+                self.on_owner_event(event)
+            except Exception as exc:
+                # 受控重试：attempts 未达上限回 pending，超限落 failed（可观察、可 requeue）
+                self.inbox.fail(job.message_id, error_class=type(exc).__name__)
+                continue
+            self.inbox.succeed(job.message_id)
 
     def _emit_unpaired(self, incoming: Incoming) -> bool:
         if self.on_unpaired is None:
@@ -257,6 +316,9 @@ class WeQSsePushListener:
     def start(self) -> None:
         if self._server is not None:
             return
+        if self.inbox is not None:
+            # 崩溃恢复（#14）：收回租约过期的 processing 任务，启动即续处理
+            self.recovered = self.inbox.recover_stale()
         if self.async_dispatch and self._worker is None:
             self._worker = threading.Thread(target=self._consume, name="wq-push-worker",
                                             daemon=True)
@@ -313,10 +375,14 @@ class WeQSsePushListener:
             try:
                 kind, payload = self._events.get(timeout=0.1)
             except queue.Empty:
+                # 空转轮询持久化 inbox：重试任务与崩溃恢复不依赖新消息到达
+                self._drain_inbox()
                 continue
             try:
                 if kind == "owner":
                     self.on_owner_event(payload)
+                elif kind == "job":
+                    self._drain_inbox()
                 elif kind == "unpaired" and self.on_unpaired is not None:
                     self.on_unpaired(payload)
                 elif kind == "mass" and self.on_mass is not None:
