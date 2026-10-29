@@ -11,7 +11,7 @@
 | P1-1 内部状态与未尽话题 | 新增可测试原型 | `life/state.py`、`life/runtime.py` | 来自真实用户输入的候选提炼与纠正 | 能保留未完事项；用户可取消且不诱导依赖 |
 | P1-2 自主发现 | 新增纯规划器 | `life/discovery.py` | 合法内容源、浏览/字幕/分析适配器、调度器 | 有来源且按用户兴趣生成私有草稿，不捏造经历 |
 | P1-3 反馈账本 | 记录可用 | `ProactiveOutbox.feedback` | 反馈自动作用于权重/限额 | “不感兴趣”后相似内容减少；“别打电话”立即拦截 |
-| P1-4 渠道身份 | 新增契约 | `life/channels.py` | 官方 QQ/OneBot 选择与认证桥、手机/眼镜 channel adapters | 只接受已配对 owner，群聊/未授权用户不可驱动私人动作 |
+| P1-4 渠道身份 | 契约+适配器已单测 | `life/channels.py`、`life/qq_onebot.py`（OneBot v11 入站桥/HTTP 监听/出站受理，默认关、需 token，未真机联调） | NapCat 等协议端实机联调、账号授权 UI、手机/眼镜 channel adapters | 只接受已配对 owner，群聊/未授权用户不可驱动私人动作 |
 | P1-5 HUD 与通话发送 | 有基础设施 / 智能层契约 | Turbo-IO 外部，VoIP 桥，DashboardGateway | 真实发送 Port、HTTPS 合约/回执、真机联调 | 提醒上镜、拒接无重复、可见证据 |
 | P2-1 自主日记/兴趣发展 | 产品目标 | 参考项目设计；状态/发现候选基础 | 短时任务调度、兴趣更新、验证与用户控制 | 写实来源、节制分享、可随时暂停 |
 | P2-2 多端同步服务 | 未实现 | `SqliteMemoryStore` 仅适合单实例 | owner 隔离、存储加密、认证 API、数据迁移 | 手机、眼镜、电话、文字引用同一记忆版本 |

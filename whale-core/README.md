@@ -202,7 +202,7 @@ python examples/life_scenario.py
 - `InnerStateStore` 只是角色表达、兴趣与未尽话题元数据；不代表 AI 真实感情。
 - `DiscoveryPlanner` 不访问 B站或其他网站，只将经过外部适配器提供的可信 URL/标题转换成候选。
 - `ProactiveOutbox` 保守默认关闭、按渠道授权和审批后才调用注入的发送器；`accepted` 只表示渠道接受，不等于用户已读。
-- `OwnerChannelRegistry` 只验证显式绑定，QQ/OneBot 的网络接入与账号认证尚未实现。
+- `OwnerChannelRegistry` 只验证显式绑定；`life/qq_onebot.py` 提供 OneBot v11 入站解析/HTTP 监听与 `send_private_msg` 出站受理端口（纯 stdlib，默认 stub 不触网、监听必须配 token、群聊默认关、出站默认关），真实协议端（NapCat 等）仍需本机注入配置，未真机联调。
 
 ## 安全
 
