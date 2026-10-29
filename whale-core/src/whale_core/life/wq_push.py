@@ -131,6 +131,7 @@ class WeQSsePushListener:
         self.requested_port = port
         self.async_dispatch = async_dispatch
         self._seen: dict[str, None] = {}
+        self._ingest_lock = threading.RLock()  # ThreadingHTTPServer may ingest retries concurrently.
         self._dropped = 0
         self._events: queue.Queue = queue.Queue(maxsize=EVENT_QUEUE_CAPACITY)
         self._stop = threading.Event()
@@ -141,7 +142,7 @@ class WeQSsePushListener:
     # ── 纯逻辑（可单测） ────────────────────────────────────────
 
     def _mark_seen(self, msg_id: str) -> bool:
-        """首次出现返回 True；有界 LRU 去重（WeQ 至少一次投递）。"""
+        """首次出现返回 True；调用方需持有 _ingest_lock。"""
         if msg_id in self._seen:
             return False
         self._seen[msg_id] = None
@@ -150,60 +151,83 @@ class WeQSsePushListener:
         return True
 
     def ingest_events(self, events: list[dict]) -> int:
-        """把解析后的事件送进管道，返回受理条数。同步或入队由 async_dispatch 决定。"""
-        accepted = 0
-        for event in events:
-            if event.get("type") == "mass":
-                accepted += 1
-                self._emit_mass(mass_event_metadata(event))
-                continue
-            incoming = sse_message_to_incoming(event, self_uin=self.self_uin,
-                                               accept_group=self.accept_group)
-            if incoming is None or not self._mark_seen(incoming.message_id):
-                continue
-            owner_event = self.registry.accept(incoming)
-            if owner_event is None:
-                accepted += 1
-                self._emit_unpaired(incoming)
-                continue
-            accepted += 1
-            self._emit_owner(owner_event)
+        """把事件送进管道，返回已消费/入队数量；过载详情由 HTTP 层使用私有结果。"""
+        accepted, _overloaded = self._ingest_events(events)
         return accepted
 
-    def _emit_owner(self, event: OwnerEvent) -> None:
+    def _ingest_events(self, events: list[dict]) -> tuple[int, bool]:
+        """串行去重并入队；队列满时不记 seen，令发送方可安全重试。"""
+        accepted = 0
+        overloaded = False
+        with self._ingest_lock:
+            for event in events:
+                if event.get("type") == "mass":
+                    if self._emit_mass(mass_event_metadata(event)):
+                        accepted += 1
+                    else:
+                        overloaded = True
+                    continue
+                incoming = sse_message_to_incoming(event, self_uin=self.self_uin,
+                                                   accept_group=self.accept_group)
+                if incoming is None or incoming.message_id in self._seen:
+                    continue
+                owner_event = self.registry.accept(incoming)
+                if owner_event is None:
+                    # Unpaired messages are intentionally consumed if no callback was configured.
+                    if self._emit_unpaired(incoming):
+                        self._mark_seen(incoming.message_id)
+                        accepted += 1
+                    else:
+                        overloaded = True
+                    continue
+                if self._emit_owner(owner_event):
+                    self._mark_seen(incoming.message_id)
+                    accepted += 1
+                else:
+                    # Do not mark seen: the upstream retry must be able to enqueue this event.
+                    overloaded = True
+        return accepted, overloaded
+
+    def _emit_owner(self, event: OwnerEvent) -> bool:
         if self.async_dispatch:
             try:
                 self._events.put_nowait(("owner", event))
+                return True
             except queue.Full:
                 self._dropped += 1
-        else:
-            self.on_owner_event(event)
+                return False
+        self.on_owner_event(event)
+        return True
 
-    def _emit_unpaired(self, incoming: Incoming) -> None:
+    def _emit_unpaired(self, incoming: Incoming) -> bool:
         if self.on_unpaired is None:
-            return
+            return True
         if self.async_dispatch:
             try:
                 self._events.put_nowait(("unpaired", incoming))
+                return True
             except queue.Full:
                 self._dropped += 1
-        else:
-            self.on_unpaired(incoming)
+                return False
+        self.on_unpaired(incoming)
+        return True
 
-    def _emit_mass(self, meta: dict) -> None:
+    def _emit_mass(self, meta: dict) -> bool:
         if self.on_mass is None:
-            return
+            return True
         if self.async_dispatch:
             try:
                 self._events.put_nowait(("mass", meta))
+                return True
             except queue.Full:
                 self._dropped += 1
-        else:
-            self.on_mass(meta)
+                return False
+        self.on_mass(meta)
+        return True
 
     def process_payload(self, headers: Mapping[str, str],
                         body: bytes | None) -> tuple[int, int]:
-        """HTTP 请求 → (状态码, 受理事件数)。401 未鉴权；413 缺失/超限；400 非法载荷。"""
+        """HTTP 请求 → (状态码, 受理事件数)。401 未鉴权；413 缺失/超限；400 非法载荷；503 队列过载可重试。"""
         authorization: str | None = None
         for key, value in headers.items():
             if key.lower() == "authorization":
@@ -216,7 +240,8 @@ class WeQSsePushListener:
         events = parse_push_events(body)
         if events is None:
             return 400, 0
-        return 200, self.ingest_events(events)
+        accepted, overloaded = self._ingest_events(events)
+        return (503 if overloaded else 200), accepted
 
     # ── 运行时（HTTP 服务 + 工作线程） ─────────────────────────
 
