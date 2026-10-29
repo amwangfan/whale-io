@@ -236,7 +236,7 @@ def test_policy_risk_matrix_owner() -> None:
     assert policy.evaluate("email", "send_email", is_owner=True,
                            explicitly_approved=True).status == "ready"
     assert policy.evaluate("shop", "purchase", is_owner=True,
-                           explicitly_approved=True).status == "ready"
+                           explicitly_approved=True, args={"amount": 10}).status == "ready"
     assert policy.evaluate("shop", "purchase", is_owner=True).status == "needs_approval"
 
 
