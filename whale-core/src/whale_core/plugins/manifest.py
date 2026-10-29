@@ -50,9 +50,54 @@ class RiskClass(str, Enum):
     TRANSACTION = "transaction"    # 交易 / 不可逆外部副作用（买东西、下单、支付）
 
 
+class PluginKind(str, Enum):
+    """插件六分类（前四类为维护者定义，后两类为架构补齐）：
+
+    - INPUT：只产事件（前台监测「手机在看什么应用」、邮件接收、日程、刷视频、
+      日常语音、雷鸟全天纪要）；
+    - OUTPUT：只执行动作（发邮件、桌面弹提示、购物下单）；
+    - CHANNEL：输入输出多端共用（QQ、微信、通话桥——收发消息/事件 + 发送动作）；
+    - PROCESSOR：内部处理型（意图执行委托、摘要、翻译、记忆整理）——
+      无对外 I/O，声明 ``provides`` 能力；典型用法：DeepSeek 产操作意图，
+      委托 qwen 等执行器模型跑工具循环，只回摘要（上下文隔离，见 processing.py）；
+    - MODEL：模型供给型——注册模型端点能力（chat / realtime / asr / tts /
+      embedding），对应编排方案四档路由与 RealtimeProvider 抽象；端点凭据只在
+      宿主 env / 私有配置，manifest 不含；
+    - MEMORY：记忆/存储型——替代 MemoryStore 后端、混合召回（嵌入+重排）、
+      同步 / 备份目标（编排方案 §3 阶段 B 与召回升级的挂载点）。
+
+    PROCESSOR / MODEL / MEMORY 统称 provider 类：无 inputs/actions，只声明
+    provides 能力，宿主按能力名解析接线。
+
+    **不可插件化（安全不变量）**：Initiative 频控、ShellPolicy 分档、
+    OwnerChannelRegistry 身份门、PluginActionPolicy 风险矩阵属于核心，
+    任何插件类型都不能替换或削弱它们。
+    """
+
+    INPUT = "input"
+    OUTPUT = "output"
+    CHANNEL = "channel"
+    PROCESSOR = "processor"
+    MODEL = "model"
+    MEMORY = "memory"
+
+
+PROVIDER_KINDS: tuple[PluginKind, ...] = (
+    PluginKind.PROCESSOR,
+    PluginKind.MODEL,
+    PluginKind.MEMORY,
+)
+
+
 @dataclass(frozen=True)
 class PluginManifest:
-    """一个插件的能力声明。inputs/动作全部显式枚举，注册时校验。"""
+    """一个插件的能力声明。inputs/动作全部显式枚举，注册时校验。
+
+    ``kind`` 可省略（按声明的能力推断：有 inputs+actions → channel；
+    只 inputs → input；只 actions → output）；processor 必须显式声明
+    kind="processor" 且给出 ``provides`` 能力名。显式 kind 与声明能力
+    不一致时拒绝（防止「自称只读却带动作」的错标）。
+    """
 
     plugin_id: str
     name: str
@@ -60,9 +105,11 @@ class PluginManifest:
     author: str = ""
     description: str = ""
     homepage: str = ""
+    kind: str = ""  # "" = 推断；或 PluginKind 值
     inputs: tuple[str, ...] = ()  # 命名空间事件 kind，如 "email.received"
     actions: tuple[str, ...] = ()
     action_risk: Mapping[str, str] = field(default_factory=dict)
+    provides: tuple[str, ...] = ()  # 仅 processor：能力名，如 "operation_execution"
     process_model: str = "external"  # external（外置进程，推荐）| in_process（owner 自写）
 
     def __post_init__(self) -> None:
@@ -103,6 +150,51 @@ class PluginManifest:
                 RiskClass(risk)
             except ValueError:
                 raise ValueError(f"invalid risk class {risk!r} for action {action!r}") from None
+
+        # 分类一致性（resolved_kind 内含全部校验，构造期即失败）
+        self.resolved_kind
+
+    @property
+    def resolved_kind(self) -> PluginKind:
+        """显式 kind 或按能力推断；不一致 / 无能力声明一律 ValueError。"""
+        declared = (self.kind or "").strip().lower()
+        if declared and declared not in {k.value for k in PluginKind}:
+            raise ValueError(f"invalid plugin kind: {self.kind!r}")
+        has_in, has_out, has_prov = bool(self.inputs), bool(self.actions), bool(self.provides)
+
+        provider_values = {k.value for k in PROVIDER_KINDS}
+        if declared in provider_values:
+            if has_in or has_out:
+                raise ValueError(
+                    f"{declared} plugins declare no inputs/actions (internal provider only)"
+                )
+            if not has_prov:
+                raise ValueError(f"{declared} plugins must declare provides capabilities")
+            return PluginKind(declared)
+
+        if declared:
+            expected = PluginKind(declared)
+        elif has_in and has_out:
+            expected = PluginKind.CHANNEL
+        elif has_in:
+            expected = PluginKind.INPUT
+        elif has_out:
+            expected = PluginKind.OUTPUT
+        else:
+            raise ValueError(
+                "manifest declares no capabilities: inputs/actions empty "
+                "(provider kinds require explicit kind + provides)"
+            )
+
+        if expected is PluginKind.INPUT and (has_out or has_prov):
+            raise ValueError("input plugins declare inputs only (no actions/provides)")
+        if expected is PluginKind.OUTPUT and (has_in or has_prov):
+            raise ValueError("output plugins declare actions only (no inputs/provides)")
+        if expected is PluginKind.CHANNEL and not (has_in and has_out):
+            raise ValueError("channel plugins require both inputs and actions")
+        if has_prov:
+            raise ValueError("provides is for provider-kind plugins only (processor/model/memory)")
+        return expected
 
     def risk_of(self, action: str) -> RiskClass | None:
         """动作风险级；未声明返回 None（策略层将拒绝执行）。"""

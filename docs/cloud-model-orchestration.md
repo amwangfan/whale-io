@@ -69,6 +69,7 @@ flowchart TB
 1. **T 档永不上 R 档同步路径**——电话不等 DeepSeek；转写经 `RealtimeTranscriptRecorder` 异步入库 [已测试]。
 2. **J 档规则优先**，规则不够且延迟可容忍才升级到小模型；门控（频控、鉴权）**永远不用 LLM 单独裁决**。
 3. **C 档是 R 档的回退**，也是非电话渠道（QQ 语音消息、`speak` 意图）唯一的语音合成路径。
+4. **T 档不跑工具循环**——陪伴模型需要执行操作时只产「操作意图」，经 processor 插件委托给执行器模型（如 `qwen3.8-flash`）跑多步循环，仅压缩摘要 + 回执回流陪伴上下文（**上下文隔离**：shell/命令原始输出不挤占 DeepSeek 上下文）；循环内工具调用仍走 ShellPolicy / PluginGateway 门控，执行器模型不能代批 [已测试（库级），见 [plugin-architecture.md](plugin-architecture.md) §1.2]。
 
 ### 2.2 渠道 × 任务路由表
 

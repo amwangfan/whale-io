@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
 from whale_core.perception.adapters import PerceptionAdapter
-from whale_core.plugins.manifest import PluginManifest, RiskClass
+from whale_core.plugins.manifest import PROVIDER_KINDS, PluginKind, PluginManifest, RiskClass
 
 
 class PluginExecutor(Protocol):
@@ -38,6 +38,10 @@ class PluginRegistration:
     manifest: PluginManifest
     executor: PluginExecutor
     input_adapter: PerceptionAdapter | None = None
+    # provider 类插件（processor / model / memory）的内部对象：
+    # IntentProcessor / 模型客户端 / MemoryStore 后端等，宿主按能力名取用。
+    # 类型在 processing.py 等模块定义，这里保持结构化 typing 避免循环 import。
+    provider: Any = None
 
 
 class PluginRegistry:
@@ -53,10 +57,17 @@ class PluginRegistry:
         *,
         executor: PluginExecutor | None = None,
         input_adapter: PerceptionAdapter | None = None,
+        provider: Any = None,
     ) -> None:
         pid = manifest.plugin_id
         if pid in self._items:
             raise ValueError(f"plugin already registered: {pid!r}")
+        resolved = manifest.resolved_kind
+        if provider is not None and resolved not in PROVIDER_KINDS:
+            raise ValueError(
+                f"provider object is for provider-kind plugins (processor/model/memory), "
+                f"got {resolved.value} plugin {pid!r}"
+            )
         for kind in manifest.inputs:
             owner = self._kind_owner.get(kind)
             if owner is not None and owner != pid:
@@ -67,6 +78,7 @@ class PluginRegistry:
             manifest=manifest,
             executor=executor or NullPluginExecutor(),
             input_adapter=input_adapter,
+            provider=provider,
         )
 
     def unregister(self, plugin_id: str) -> None:
@@ -92,12 +104,40 @@ class PluginRegistry:
         manifest = self.manifest(plugin_id)
         return manifest.risk_of(action) if manifest else None
 
+    def kind_of(self, plugin_id: str) -> PluginKind | None:
+        manifest = self.manifest(plugin_id)
+        return manifest.resolved_kind if manifest else None
+
     def input_adapters(self) -> list[tuple[str, PerceptionAdapter]]:
         return [
             (pid, item.input_adapter)
             for pid, item in self._items.items()
             if item.input_adapter is not None
         ]
+
+    def providers_for(
+        self, capability: str, *, kind: PluginKind | None = None
+    ) -> list[tuple[str, Any]]:
+        """按能力名解析 provider 类插件（注册顺序即优先级）。
+
+        返回 ``(plugin_id, provider)``；provider 为 None（未接线）也会返回，
+        由调用方（如 ProcessorRouter）落到 Null 行为——契约先行、部署后置。
+        """
+        out: list[tuple[str, Any]] = []
+        for pid, item in self._items.items():
+            m = item.manifest
+            resolved = m.resolved_kind
+            if resolved not in PROVIDER_KINDS:
+                continue
+            if kind is not None and resolved is not kind:
+                continue
+            if capability in m.provides:
+                out.append((pid, item.provider))
+        return out
+
+    def processors_for(self, capability: str) -> list[tuple[str, Any]]:
+        """processors_for = providers_for(capability, kind=PROCESSOR) 的快捷方式。"""
+        return self.providers_for(capability, kind=PluginKind.PROCESSOR)
 
     def owner_of_kind(self, kind: str) -> str | None:
         return self._kind_owner.get(kind)
