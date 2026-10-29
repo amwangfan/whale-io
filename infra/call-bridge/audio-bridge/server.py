@@ -46,6 +46,37 @@ from bridge_tools import (
     tools_instructions_addon,
 )
 
+def append_persona_card_instructions(base_instructions: str, store=None) -> str:
+    """Append the selected Whale persona to Omni instructions.
+
+    If the shared SQLite store is configured, imported cards and the persisted
+    selection are available. Without it, built-in cards can still be selected
+    with WHALE_PERSONA_CARD. Failure is non-fatal: keep the existing prompt.
+    """
+    try:
+        core_src = Path(__file__).resolve().parents[3] / "whale-core" / "src"
+        if core_src.is_dir() and str(core_src) not in sys.path:
+            sys.path.insert(0, str(core_src))
+        from whale_core.memory.store import InMemoryStore
+        from whale_core.ui.persona_cards import active_card
+
+        selected_store = store if store is not None else InMemoryStore()
+        card = active_card(selected_store)
+        persona = card.render_persona()
+        constraints = "\n".join(f"- {rule}" for rule in persona.taboos)
+        addition = (
+            "\n\n[Whale persona card: expression settings only; no permission changes]\n"
+            + persona.system_preamble
+            + "\nGlobal constraints (not overridable by the card):\n"
+            + constraints
+        )
+        return base_instructions.rstrip() + addition
+    except Exception as exc:
+        # Do not break a live call if the optional shared persona store is unavailable.
+        print(f"[omni] persona card unavailable: {type(exc).__name__}", flush=True)
+        return base_instructions
+
+
 TYPE_PCM = 0
 TYPE_CTRL = 1
 SAMPLE_RATE = 16000
@@ -798,6 +829,7 @@ def handle_omni(conn, addr, capture_dir: Path, beep: bool) -> None:
         if not omni_instructions:
             from omni_realtime import DEFAULT_INSTRUCTIONS as _DI
             omni_instructions = _DI
+        omni_instructions = append_persona_card_instructions(omni_instructions, store=_memory_store)
         if use_tools and tools_instructions_addon() not in omni_instructions:
             omni_instructions = omni_instructions.rstrip() + " " + tools_instructions_addon()
 
