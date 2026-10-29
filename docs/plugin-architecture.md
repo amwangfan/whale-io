@@ -184,7 +184,8 @@ result = router.route(ProcessingRequest(
 ## 7. 状态与验收
 
 - **[已测试]**：清单校验（核心事件冒充/保留字/形状/六分类一致性）、注册表 I/O/provider 边界、`PluginEvent` 身份与 kind 校验、门控矩阵、伪造 owner/审批字段拒绝、交易金额 fail-closed 与日限预留、审计脱敏、网关三态回执、executor 异常处理、Composite 路由、agent 不能自批、ProcessorRouter 摘要截断/审计哈希、DelegatingIntentProcessor 空 allowlist 拒绝工具。具体总数以 CI 实际结果为准.
-- **[规划，P1]**：第一个真实外置插件样例（邮件 IMAP 只读 + 桌面通知）；`plugin_action` 与 `ProactiveOutbox` 的组合模板（communicate 动作默认走草稿审批流）；宿主插件配置文件（manifest JSON 目录 + token 分离）。
+- **[已测试]** QQ/WeQ channel 插件（`life/qq_weq_plugin.py` + `examples/qq_live_workflow.py` 接线）：channel 类第一个真实实例——`send_message`(communicate) 经 PluginGateway×ProactiveOutbox 组合模板（宿主台账 verifier：owner 草稿集 + 审批集；executor 复用同一账本，预算不分叉），即 §5「外置进程」先例（WeQ SSE/Web）的插件层落地，N100 生产链路同款流。
+- **[规划，P1]**：第一个真实外置插件样例（邮件 IMAP 只读 + 桌面通知）；宿主插件配置文件（manifest JSON 目录 + token 分离）。
 - **[规划，P2]**：微信协议端适配（外置进程，风控责任同 QQ OneBot 声明）；购物 executor 对接真实商城 API（限额从 env 注入）。
 - 验收口径：**新增一个 I/O 点 = 新 manifest + executor/adapter + 宿主一行 register()，核心零改动**；任何插件动作可在台账回答「谁触发、什么风险级、谁批准」。
 

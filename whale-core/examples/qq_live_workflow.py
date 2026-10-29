@@ -58,7 +58,7 @@ for _stream in (sys.stdout, sys.stderr):
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "whale-core" / "src"))
 
-from whale_core.life.channels import OwnerChannelRegistry          # noqa: E402
+from whale_core.life.channels import OwnerChannelRegistry, OwnerEvent  # noqa: E402
 from whale_core.life.initiative import ProactiveOutbox, ProactivePrefs  # noqa: E402
 from whale_core.life.qq_workflow import QqInboundWorkflow           # noqa: E402
 from whale_core.life.wq_push import WeQSsePushListener              # noqa: E402
@@ -292,7 +292,33 @@ def cmd_run(args) -> int:
     workflow = QqInboundWorkflow(store, build_brain(), prefs=prefs)
     registry = OwnerChannelRegistry(owner_id="owner", bindings=bindings)
 
+    # QQ/WeQ is registered as a channel plugin. The input adapter is consumed here
+    # immediately; live unattended sends use PluginGateway + the same workflow Outbox.
+    from whale_core.life.qq_weq_plugin import (
+        QQ_WEQ_PLUGIN_ID, build_qq_weq_gateway, register_qq_weq_plugin, send_message_intent)
+    from whale_core.plugins import PluginRegistry
+    plugin_registry = PluginRegistry()
+    adapter, _executor = register_qq_weq_plugin(
+        plugin_registry, port=send_port, outbox=workflow.outbox, prefs=prefs)
+    owner_draft_ids: set[str] = set()
+    approved_draft_ids: set[str] = set()
+    plugin_gateway = build_qq_weq_gateway(
+        plugin_registry, owner_draft_ids=owner_draft_ids,
+        approved_draft_ids=approved_draft_ids)
+    print(f"[插件] {QQ_WEQ_PLUGIN_ID} channel 已注册（send_message=communicate，网关门控+共享账本）")
+
     def on_owner(event):
+        if not adapter.feed(event):
+            raise RuntimeError("QQ/WeQ plugin input adapter full")
+        plugin_event = next(adapter.poll(), None)
+        if plugin_event is None:
+            raise RuntimeError("QQ/WeQ plugin input adapter returned no event")
+        payload = plugin_event.payload
+        event = OwnerEvent(
+            owner_id=str(payload["owner_id"]), channel=str(payload["channel"]),
+            conversation=str(payload["conversation"]), message_id=str(payload["message_id"]),
+            text=str(payload["text"]),
+        )
         print(f"\n← [owner] conv={event.conversation} msg={event.message_id} "
               f"text={event.text[:60]!r}")
         try:
@@ -308,8 +334,15 @@ def cmd_run(args) -> int:
         if result["verdict"] != "needs_approval":
             return
         if live_auto:
-            dispatch_approved(store, result["draft_id"], send_port)
+            # The dual-switch unattended mode is the only auto path that can reach
+            # the real port; the host authorizes this owner-derived draft explicitly.
+            owner_draft_ids.add(result["draft_id"])
+            approved_draft_ids.add(result["draft_id"])
+            receipt = plugin_gateway.dispatch(send_message_intent(
+                event.conversation, result["reply"], draft_id=result["draft_id"]))
+            print(f"  [插件网关] {receipt}")
         elif args.auto_approve:
+            # --auto-approve remains isolated dry-run: no real Outbox or plugin executor.
             dispatch_dry_run(store, result["draft_id"])
             print(f"  → 真实发送记录：python examples/qq_live_workflow.py approve {result['draft_id']}")
         else:
