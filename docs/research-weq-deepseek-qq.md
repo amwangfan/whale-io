@@ -198,12 +198,15 @@ WeQ 本地工作克隆：`E:\WhaleIO\tmp\WeQ`（已 gitignore；remote：origin=
 
 | 线 | 分支 | 用途 | 纪律 |
 | --- | --- | --- | --- |
-| **上游 PR 线** | `perf/bot-store-hotpath`（PR #118）、`perf/bot-persona-cache`（PR #119） | 向 weq-devs/WeQ:dev 提 PR | 从 `origin/dev` 拉出；一个 PR 一个主题；**绝不出现 whale-io 相关内容**；改动仅限对上游自身有价值的部分 |
-| **whale-io 部署线** | `whaleio/bot-engine`（= dev + #118 + #119 合并） | 构建本机部署的 `bot.mjs`（已换入安装的 WeQ `resources\resources\bot-runtime\`，原件备份 `bot.mjs.orig-2.3.2`） | whale-io 专用的 WeQ 定制（发送接口实验、按需在线、SSE 加固等）只进 `whaleio/*` 命名空间；不向 upstream 提这些分支的 PR |
+| **上游 PR 线** | `perf/bot-store-hotpath`（PR #118，**已合并** 2026-10-29，merge 56abd618）、`perf/bot-persona-cache`（PR #119，**已合并** 2026-10-29，merge 93dd2e53） | 向 weq-devs/WeQ:dev 提 PR | 从 `origin/dev` 拉出；一个 PR 一个主题；**绝不出现 whale-io 相关内容**。维护者合并时顺手把测试断言改为 import 常量（36b4e8b5）。**按用户指示：两 PR 落地后不再向上游提交新 PR** |
+| **whale-io 部署线** | `whaleio/bot-engine`（**已重基** = 新 dev@93dd2e53 + 分桶落盘 b9da31a3 + 桌面剥离 164d3ea8 + 免 Go 打包链 b17daf4f/cf8051eb） | 构建本机/N100 部署产物（bot.mjs、weq-web overlay、桌面 win-unpacked） | whale-io 专用的 WeQ 定制只进 `whaleio/*` 命名空间；不向 upstream 提 PR；已推 fork 备份 |
 
 维护动作：
-- 上游合并 #118/#119 后：`whaleio/bot-engine` rebase 到新 `origin/dev`，删除重复实现
-  （persona_cache 的本地 `freezeDeep` 换成 `json_file` 的 `deepFreeze`），重跑测试并重建 `bot.mjs` 换入；
+- ~~上游合并 #118/#119 后：`whaleio/bot-engine` rebase 到新 `origin/dev`~~ **已完成
+  （2026-10-29 深夜）**：部署线重建于 dev@93dd2e53，三个 whaleio 提交 cherry-pick 零冲突，
+  门禁全绿（bot 21 + service 48 + desktop typecheck + 受影响 desktop 测试 80 例 + bot.mjs
+  重打包 451.3kb）。**已部署产物无需重建**（与新分支尖功能等价；上游增量仅测试打磨与
+  无关的 tasks 特性 37e84090）；下一次重建周期（nt_helper 2026-11-26 到期刷新）自然采用新基线；
 - WeQ 官方升级（安装器覆盖 `bot.mjs`）后：从新 tag 重建 `whaleio/bot-engine` 并重新换入，或等上游合并后直接用官方版；
 - whale-io 侧对接件（SSE 桥、适配器、运行器）全部在 whale-io 仓，不 fork WeQ 代码（许可：CC BY-NC-SA，进程隔离集成）。
 
