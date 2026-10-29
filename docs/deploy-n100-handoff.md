@@ -184,10 +184,12 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
 
    [Service]
    WorkingDirectory=/opt/whale/whale-core
-   ExecStart=/usr/bin/python3 examples/qq_live_workflow.py run --live-auto-send \
+   ExecStart=/usr/bin/python3 examples/qq_live_workflow.py \
      --secrets /opt/whale/secrets/qq_workflow.env \
      --store /opt/whale/state/qq_workflow.sqlite3 \
-     --inbox /opt/whale/state/qq_inbox.sqlite3
+     --inbox /opt/whale/state/qq_inbox.sqlite3 \
+     run --live-auto-send
+   UMask=0077
    Restart=on-failure
    RestartSec=10
    MemoryMax=512M
@@ -195,7 +197,7 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
    [Install]
    WantedBy=multi-user.target
    ```
-   先 `mkdir -p /opt/whale/state`。
+   先 `install -d -m 700 /opt/whale/state`（inbox 含私聊正文，目录与数据库须私有）。
    **迁移注意（issue #12）**：`--auto-approve` 已改为纯 dry-run（不真实发送）。
    无人值守真实发送 = `--live-auto-send` **且** `qq_workflow.env` 里加
    `QQ_LIVE_AUTOSEND=1`（双开关，缺一 runner fail closed 退出码 2）；入站持久化
@@ -210,7 +212,7 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
 用户主账号（3563425362）给小号（3899713055）发一条消息 → 10 秒内：
 `journalctl -u whale-runner -n 30` 应出现 `← [owner]` → `[AI 草稿]` →
 `[账本] qq-reply:…: accepted (sent to channel)`，且用户主账号收到鲸鱼回复。
-另测：`python3 examples/qq_live_workflow.py show --secrets … --store …` 列出账本。
+另测：`python3 examples/qq_live_workflow.py --secrets … --store … show` 列出账本。
 
 ## 4. 维护与纪律
 
