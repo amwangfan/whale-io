@@ -147,6 +147,7 @@ class CompositeActionGateway:
     - phone_action → phone_control
     - ambient_listen → ambient_listen stub
     - shell_whitelist / shell_command → mock_http（拟 POST，不真连）
+    - plugin_action → plugin（未注入时为 Null，回执与 fallback 一致）
     """
 
     def __init__(
@@ -157,6 +158,7 @@ class CompositeActionGateway:
         phone_control: ActionGateway | None = None,
         ambient_listen: ActionGateway | None = None,
         mock_http: ActionGateway | None = None,
+        plugin: ActionGateway | None = None,
         fallback: ActionGateway | None = None,
         kind_map: Mapping[str, str] | None = None,
     ) -> None:
@@ -165,6 +167,7 @@ class CompositeActionGateway:
         self.phone_control = phone_control or PhoneControlGateway()
         self.ambient_listen = ambient_listen or AmbientListenGateway()
         self.mock_http = mock_http or MockHttpActionGateway()
+        self.plugin = plugin or NullActionGateway()
         self.fallback = fallback or NullActionGateway()
         self.kind_map = dict(
             kind_map
@@ -177,6 +180,7 @@ class CompositeActionGateway:
                 "ambient_listen": "ambient_listen",
                 "shell_whitelist": "mock_http",
                 "shell_command": "mock_http",
+                "plugin_action": "plugin",
             }
         )
         self.last_intent: ActionIntent | None = None
@@ -192,6 +196,8 @@ class CompositeActionGateway:
             return self.phone_control
         if route == "ambient_listen":
             return self.ambient_listen
+        if route == "plugin":
+            return self.plugin
         if route == "mock_http":
             return self.mock_http
         return self.fallback
