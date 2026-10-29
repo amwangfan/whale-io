@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -62,6 +63,8 @@ class SqliteInbox:
                  lease_seconds: int = 300) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be >= 1")
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -85,6 +88,9 @@ class SqliteInbox:
                )"""
         )
         self.db.commit()
+        if self.path != ":memory:" and os.name == "posix":
+            # Inbox contains private message text; do not leave the main DB world-readable.
+            os.chmod(self.path, 0o600)
 
     # ── 入队 / 认领 ────────────────────────────────────────────
 

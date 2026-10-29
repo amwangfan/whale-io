@@ -206,11 +206,13 @@ def build_send_port(*, live_ok: bool):
         allowed = tuple(
             h.strip() for h in os.environ.get("WEQ_WEB_ALLOWED_HOSTS", "").split(",") if h.strip()
         ) or None
-        print(f"[出站] WeQ Web 真实发送已启用（{url}，目标 uid={uid[:6]}…{uid[-4:]}）")
-        return WeQWebSendPort(url, os.environ.get("WEQ_WEB_TOKEN", "").strip(),
+        port = WeQWebSendPort(url, os.environ.get("WEQ_WEB_TOKEN", "").strip(),
                               target_uid=uid,
                               expected_account_uin=os.environ.get("QQ_SELF_UIN") or None,
                               allowed_hosts=allowed)
+        # Do not log the configured URL (it may contain sensitive query parameters) or UID.
+        print("[出站] WeQ Web 真实发送已启用（地址校验通过；目标固定为已配置 owner）")
+        return port
     print("[出站] [!] console stub（不真实发送；真实端=配齐 WEQ_WEB_* 后走 approve "
           "或 --live-auto-send 双开关）")
     return ConsoleSendPort()
@@ -249,6 +251,9 @@ def dispatch_approved(store, draft_id: str, port=None) -> str:
 
 
 def cmd_run(args) -> int:
+    if args.auto_approve and args.live_auto_send:
+        print("错误：--auto-approve（dry-run）与 --live-auto-send 互斥，请只选择一种模式。")
+        return 2
     token = os.environ.get("WEQ_SSE_TOKEN", "")
     if not token:
         print("错误：WEQ_SSE_TOKEN 未配置（secrets 文件或环境变量），监听器 fail closed 拒绝启动。")
@@ -383,6 +388,16 @@ def cmd_jobs(args) -> int:
     return 0
 
 
+def add_shared_options(parser: argparse.ArgumentParser, *, store: bool = False,
+                       inbox: bool = False) -> None:
+    """Allow deployment paths on either side of a subcommand."""
+    parser.add_argument("--secrets", default=argparse.SUPPRESS)
+    if store:
+        parser.add_argument("--store", default=argparse.SUPPRESS)
+    if inbox:
+        parser.add_argument("--inbox", default=argparse.SUPPRESS)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--secrets", default=str(DEFAULT_SECRETS))
@@ -393,6 +408,7 @@ def main() -> int:
                              "关闭后崩溃会丢已 ACK 消息，仅演示用）")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_run = sub.add_parser("run", help="启动 SSE 监听 + AI 工作流")
+    add_shared_options(p_run, store=True, inbox=True)
     p_run.add_argument("--port", type=int, default=int(os.environ.get("WQ_PUSH_PORT", "18797")))
     p_run.add_argument("--accept-group", action="store_true",
                        help="同时接收群消息（默认只收私聊；群内容不可信）")
@@ -404,11 +420,14 @@ def main() -> int:
                             "启动打印警告；仍受白名单/额度/静默约束）")
     p_run.set_defaults(fn=cmd_run)
     p_ap = sub.add_parser("approve", help="人工批准一条草稿（WEQ_WEB_* 配齐则真实发送）")
+    add_shared_options(p_ap, store=True)
     p_ap.add_argument("draft_id")
     p_ap.set_defaults(fn=cmd_approve)
     p_ls = sub.add_parser("show", help="列出草稿与账本状态")
+    add_shared_options(p_ls, store=True)
     p_ls.set_defaults(fn=cmd_show)
     p_jobs = sub.add_parser("jobs", help="入站持久化队列：计数/失败清单/requeue")
+    add_shared_options(p_jobs, inbox=True)
     p_jobs.add_argument("--requeue-failed", action="store_true",
                         help="把所有 failed 任务重新入队（下次 run 续处理）")
     p_jobs.set_defaults(fn=cmd_jobs)
@@ -420,4 +439,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # QQ messages and SQLite WAL/SHM files contain private conversation data.
+    if os.name == "posix":
+        os.umask(0o077)
     raise SystemExit(main())

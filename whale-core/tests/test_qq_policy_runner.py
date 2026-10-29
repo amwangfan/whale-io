@@ -176,6 +176,31 @@ def test_live_auto_send_requires_both_switches(runner, monkeypatch):
         SimpleNamespace(live_auto_send=False)) is False          # 只有 env
 
 
+
+def test_dry_run_and_live_auto_send_are_mutually_exclusive(runner, capsys):
+    args = SimpleNamespace(auto_approve=True, live_auto_send=True)
+    assert runner.cmd_run(args) == 2
+    assert "互斥" in capsys.readouterr().out
+
+
+def test_shared_cli_paths_are_accepted_after_subcommand(runner, monkeypatch):
+    import sys
+    seen = {}
+    def fake_run(args):
+        seen.update(secrets=args.secrets, store=args.store, inbox=args.inbox)
+        return 0
+    monkeypatch.setattr(runner, "cmd_run", fake_run)
+    monkeypatch.setattr(sys, "argv", [
+        str(RUNNER_PATH), "run", "--secrets", "/tmp/qq.env",
+        "--store", "/tmp/qq.sqlite3", "--inbox", "/tmp/inbox.sqlite3",
+    ])
+    assert runner.main() == 0
+    assert seen == {
+        "secrets": "/tmp/qq.env", "store": "/tmp/qq.sqlite3",
+        "inbox": "/tmp/inbox.sqlite3",
+    }
+
+
 def test_dry_run_leaves_real_ledger_and_quota_untouched(runner):
     store = InMemoryStore()
     outbox = propose_draft(store)

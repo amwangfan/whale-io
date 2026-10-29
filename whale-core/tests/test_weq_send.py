@@ -154,6 +154,23 @@ def test_remote_requires_https():
     assert port.base_url == "https://weq.example.com"
 
 
+
+def test_fake_loopback_prefix_is_not_a_loopback_address():
+    for url in ("http://127.attacker.example", "http://127.0.0.1.evil.example"):
+        with pytest.raises(ValueError, match="HTTPS"):
+            WeQWebSendPort(url, TOKEN, target_uid=UID)
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1:7690?token=secret-value",
+    "http://127.0.0.1:7690#secret-value",
+])
+def test_query_and_fragment_are_rejected_without_echoing_values(url):
+    with pytest.raises(ValueError) as exc:
+        WeQWebSendPort(url, TOKEN, target_uid=UID)
+    assert "secret-value" not in str(exc.value)
+
+
 def test_bad_scheme_and_embedded_credentials_refused():
     with pytest.raises(ValueError, match="scheme"):
         WeQWebSendPort("ftp://127.0.0.1:7690", TOKEN, target_uid=UID)

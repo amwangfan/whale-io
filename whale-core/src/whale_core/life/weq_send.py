@@ -25,6 +25,7 @@ tRPC 接口**（`/_auth/login` + `/trpc/account.sendElements`），等价于用�
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import urllib.error
@@ -42,7 +43,12 @@ LOOPBACK_HOSTS = frozenset({"localhost", "::1"})
 
 
 def _is_loopback(host: str) -> bool:
-    return host in LOOPBACK_HOSTS or host.startswith("127.")
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def validate_base_url(raw: str, *, allowed_hosts: Sequence[str] | None = None) -> str:
@@ -53,6 +59,8 @@ def validate_base_url(raw: str, *, allowed_hosts: Sequence[str] | None = None) -
     """
     url = (raw or "").strip().rstrip("/")
     parts = urllib.parse.urlsplit(url)
+    if parts.query or parts.fragment or "?" in url or "#" in url:
+        raise ValueError("WEQ_WEB_URL must not include query or fragment")
     if parts.scheme not in ("http", "https"):
         raise ValueError(f"WEQ_WEB_URL scheme must be http/https, got {parts.scheme!r}")
     if parts.username is not None or parts.password is not None:
