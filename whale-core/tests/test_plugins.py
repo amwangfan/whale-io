@@ -387,6 +387,23 @@ def test_gateway_transaction_daily_limit_reserves_before_execution() -> None:
     assert len(spy.calls) == 1
 
 
+def test_gateway_rejects_malformed_payloads_without_raising() -> None:
+    reg, policy = make_policy()
+    spy = SpyExecutor()
+    reg.register(WECHAT, executor=spy)
+    gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True,
+                       approval_verifier=lambda _intent: True)
+    bad_payloads = (
+        "not-a-mapping",
+        ["not", "a", "mapping"],
+        {"plugin_id": "wechat", "action": "send_message", "args": "not-a-mapping"},
+    )
+    for payload in bad_payloads:
+        receipt = gw.dispatch(ActionIntent(kind="plugin_action", payload=payload))
+        assert receipt.startswith("plugin-denied:")
+    assert spy.calls == []
+
+
 def test_gateway_ignores_other_kinds() -> None:
     reg, policy = make_policy()
     gw = PluginGateway(reg, policy)
