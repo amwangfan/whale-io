@@ -145,3 +145,17 @@ def test_agent_mode_does_not_allocate_unused_memory_worker(monkeypatch, tmp_path
     monkeypatch.setattr(server, "TOKEN", "")
     _run_call(server.handle_agent, None, False)
     assert not db.exists()
+
+
+
+def test_selected_persona_card_is_applied_to_omni_instructions():
+    from whale_core.memory.store import InMemoryStore
+    from whale_core.ui.persona_cards import switch_card
+
+    store = InMemoryStore()
+    switch_card(store, "qunyou")
+    instructions = server.append_persona_card_instructions("base omni instructions", store)
+    assert instructions.startswith("base omni instructions")
+    assert "短句像打字" in instructions
+    assert "不泄露密钥" in instructions
+    assert "权限、频控与审批由策略层管理" in instructions
