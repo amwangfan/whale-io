@@ -165,6 +165,8 @@ QQ 适配器入站必须走 `Incoming.transport_authenticated=True` + 显式 `(c
 3. **QQ**：同用 `persona_summary`，叠加渠道文案规范（7.2）；语气随渠道适配但 **taboos 全端一致**。
 4. **声音人格**：`timbre_hint ↔ voice id`（如 `warm_neutral → Tina/longanhuan`）映射表放云端私有配置，全渠道唯一，避免"电话一个声音、QQ 语音另一个声音"。
 
+人格的载体是**角色卡**（可选可切换）：内置卡组、`switch_card` 持久化切换与社区卡导入已实现 [已测试]，切卡即刷新 `persona:default` 快照、全端渲染链路自动跟随；卡表、导入方式与安全边界见 [persona-cards.md](persona-cards.md)。
+
 漂移防线：
 
 - taboos 作为各端渲染模板的硬前缀（不可被会话内容覆盖）；
@@ -265,6 +267,6 @@ golden set（离线 fixtures，进 CI）+ 抽样 LLM-judge（人格/语气/边�
 
 ## 10. 相关文档
 
-[dual-brain.md](dual-brain.md)（双脑分工与延迟红线） · [framework-status.md](framework-status.md)（三层可推进状态） · [companion-roadmap.md](companion-roadmap.md)（验收表） · [companion-pipelines.md](companion-pipelines.md)（运行闭环） · [contracts.md](../whale-core/docs/contracts.md)（事件/意图契约） · [voip-bridge.md](voip-bridge.md) 与 [audio-bridge README](../infra/call-bridge/audio-bridge/README.md)（管线细节） · [cloud-push.md](cloud-push.md)（上镜通道） · [cloud-operations.md](cloud-operations.md)（端云交互、后台占用与 shell 权限分级） · [security.md](security.md)
+[dual-brain.md](dual-brain.md)（双脑分工与延迟红线） · [framework-status.md](framework-status.md)（三层可推进状态） · [companion-roadmap.md](companion-roadmap.md)（验收表） · [companion-pipelines.md](companion-pipelines.md)（运行闭环） · [contracts.md](../whale-core/docs/contracts.md)（事件/意图契约） · [voip-bridge.md](voip-bridge.md) 与 [audio-bridge README](../infra/call-bridge/audio-bridge/README.md)（管线细节） · [cloud-push.md](cloud-push.md)（上镜通道） · [cloud-operations.md](cloud-operations.md)（端云交互、后台占用与 shell 权限分级） · [persona-cards.md](persona-cards.md)（角色卡：可选可切换人格） · [security.md](security.md)
 
 > 外部模型型号、价格、平台风控与工具维护状态均为 **2026-10 公开调研快照**（来源已内联于各表格），只作选型参考；部署前以厂商官网复核为准，本文不担保任何第三方服务的持续可用性。调研补充参考：[MaiBot 数据导出接口](https://docs.mai-mai.org/develop/statistics-io)、[PowerSync/CRDT 对比](https://github.com/liveblocks/liveblocks/blob/main/docs/pages/compare/liveblocks-vs-powersync.mdx)、[astrbot 主动消息插件](https://github.com/Pancakes-Labs/astrbot_plugin_proactive_chat)。
