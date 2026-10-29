@@ -14,6 +14,7 @@
 
 - whale-core：P0/P1/Life stub、perceive→decide→act、Actions 网关、双脑记忆契约
 - 云端行动闭环 stub：入站事件 → 选行动 → 推送卡片 / shell 白名单意图（mock HTTP，密钥仅 env）
+- 云端 shell 权限分级：managed（白名单工具）/ safe（+网页搜索类只读）/ personal（仅认证 owner 的非高危自由命令）+ 高危硬拒绝清单 + `cmd:` 意图闭环与拒绝卡（`whale_core.cloud.shell_policy`，测试全绿；执行器沙箱仍 [规划]）
 - call-bridge：Omni realtime 路径 + `BRIDGE_TOOLS` 白名单（见 `infra/call-bridge/audio-bridge/README.md` 与下文 docs）
 - 文案统一为「VoIP 来电」（非「假来电」用户向文案）
 
@@ -29,8 +30,9 @@
 1. 云端：把行动闭环 stub 接到真实入站适配（QQ/OneBot 等仍外置），mock HTTP → 可选真实 HTTPS writer（env Token）
 2. VoIP：本机 / USB reverse 跑通 `BRIDGE_MODE=omni`；需要工具时 `BRIDGE_TOOLS=1`
 3. 手机雷鸟 iO：保持云推送轮询契约；无眼镜时只验 approve/receipt，不声称镜片必显
+4. 云端运维：部署缺省 `WHALE_SHELL_TIER=managed`；执行器沙箱单元、进程整合与条件轮询按 [cloud-operations.md](cloud-operations.md) P1 推进
 
-完整方案与 P0 验收表见 [cloud-model-orchestration.md](cloud-model-orchestration.md)（模型四档路由、记忆单写者同步、聊天记录备份/恢复、频控反馈调权、语义三道门）。
+完整方案与 P0 验收表见 [cloud-model-orchestration.md](cloud-model-orchestration.md)（模型四档路由、记忆单写者同步、聊天记录备份/恢复、频控反馈调权、语义三道门）；运维与 shell 分级见 [cloud-operations.md](cloud-operations.md)。
 
 ### P1（硬件到了再开）
 
