@@ -58,7 +58,7 @@ JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
 - **[云端运维与 shell 分级](docs/cloud-operations.md)**：端云交互优化（条件轮询/批量上行/幂等重放）、后台占用收敛（单常驻进程/按需拉起/资源上限）、shell 权限 managed/safe/personal 三档与高危硬拒绝。
 - **[可运行的无网络演示](whale-core/examples/life_scenario.py)**：用户兴趣 → 内容候选 → 默认禁止 → 单次批准 → 模拟渠道受理。
 
-**默认边界**：不主动联系、不主动打电话、不擅自录音截图、不自动替用户操作 QQ/B站；部署前必须经过账号/设备级授权。小型代码原型与真实接入不是一回事。
+**默认边界**：**主动功能全部允许**——主动联系、主动打电话、主动消息、代用户操作 QQ/B站，经账号/设备级授权后即可开启，不再是产品禁区；采集类保持「不擅自」（录音/截图/环境听写需显式授权）；**唯一硬性隔离：系统 shell 类高危能力**——必须分档裁决 + 宿主机沙箱，高危模式任何档位硬拒绝（见 [docs/cloud-operations.md](docs/cloud-operations.md)）。小型代码原型与真实接入不是一回事。
 
 ## 双脑能力与演进
 
