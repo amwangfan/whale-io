@@ -1,0 +1,321 @@
+"""WeQ SSE 推送 → whale-core 入站桥（W09 QQ 渠道的"收"侧）。
+
+WeQ 桌面端（完全离线模式亦可）实时监听本地 nt_msg.db，把新消息 POST 到本模块的
+HTTP 监听器（载荷 `{events:[...]}`，Bearer 鉴权，失败指数退避重试=至少一次投递）。
+本模块只做三件事：鉴权+解析 → 映射 `Incoming` → `OwnerChannelRegistry` 配对产出
+`OwnerEvent`。业务决策（AI/记忆/草稿）在 `qq_workflow`，这里不含任何策略。
+
+边界：
+- 默认只监听 127.0.0.1；未配置 token 直接拒绝启动（fail closed）；token 恒定时间比较。
+- 至少一次投递 → 按 msgId 有界去重，重复推送不会重复进管道。
+- `self_uin`（bot 所在账号自己）发的消息不回灌，防未来自发回复形成自激回路。
+- 群聊默认不收（`accept_group=False`）：群内容永远按不可信输入处理。
+- HTTP 立即 ACK，事件经有界队列由单一工作线程串行消费：AI 耗时不阻塞 WeQ 推送
+  （其超时仅 10s），且同一所有者的事件天然按到达序处理。
+- 不打日志正文；回调只拿到配对结果，未配对事件仅暴露元数据。
+"""
+from __future__ import annotations
+
+import json
+import queue
+import threading
+from collections.abc import Callable, Mapping
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from whale_core.life.channels import Incoming, OwnerChannelRegistry, OwnerEvent
+from whale_core.life.qq_onebot import MAX_TEXT_CHARS, bearer_authenticated
+
+DEFAULT_WQ_PUSH_HOST = "127.0.0.1"
+DEFAULT_WQ_PUSH_PORT = 18797
+MAX_BODY_BYTES = 4_000_000
+DEDUP_WINDOW = 2048
+EVENT_QUEUE_CAPACITY = 256
+
+
+def parse_push_events(body: bytes | None) -> list[dict] | None:
+    """校验推送载荷并返回事件列表；结构非法返回 None（不抛异常）。"""
+    if body is None or len(body) > MAX_BODY_BYTES:
+        return None
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    events = payload.get("events")
+    if not isinstance(events, list):
+        return None
+    return [e for e in events if isinstance(e, dict)]
+
+
+def sse_message_to_incoming(event: Mapping, *, self_uin: str,
+                            accept_group: bool = False) -> Incoming | None:
+    """WeQ SSE 单条 message 事件 → Incoming；不收/解析不了的一律 None（宁缺勿错）。
+
+    - 只认 type=message（mass 合并事件走独立回调，不进消息管道）；
+    - self_uin 自己发的消息过滤（防自激回路）；
+    - 群聊默认拒收；c2c → conversation=private:<convId>，group → group:<convId>；
+    - transport_authenticated=True：调用前提是 HTTP 层 Bearer 已通过。
+    """
+    if event.get("type") != "message":
+        return None
+    sender = str(event.get("senderUin") or "")
+    if not sender or sender == str(self_uin):
+        return None
+    msg_id = str(event.get("msgId") or "")
+    if not msg_id:
+        return None
+    chat_type = event.get("chatType")
+    if chat_type == "c2c":
+        conversation_kind = "private"
+    elif chat_type == "group" and accept_group:
+        conversation_kind = "group"
+    else:
+        return None
+    conv_id = str(event.get("convId") or "")
+    if not conv_id:
+        return None
+    text = event.get("text")
+    if not isinstance(text, str):
+        text = ""
+    if len(text) > MAX_TEXT_CHARS:
+        text = text[:MAX_TEXT_CHARS]
+    return Incoming(channel="qq", account=sender,
+                    conversation=f"{conversation_kind}:{conv_id}",
+                    message_id=msg_id, text=text, transport_authenticated=True)
+
+
+def mass_event_metadata(event: Mapping) -> dict:
+    """mass 合并事件的元数据摘要（不含预览正文，正文属于消息内容）。"""
+    preview = event.get("preview")
+    return {
+        "chatType": event.get("chatType"),
+        "convId": str(event.get("convId") or ""),
+        "fromSeq": str(event.get("fromSeq") or ""),
+        "toSeq": str(event.get("toSeq") or ""),
+        "count": event.get("count"),
+        "hasPreview": isinstance(preview, dict),
+    }
+
+
+class WeQSsePushListener:
+    """接收 WeQ「SSE 消息推送」的 stdlib HTTP 监听器。
+
+    回调契约：
+    - `on_owner_event(OwnerEvent)`：配对成功的所有者消息（工作线程串行调用）；
+    - `on_unpaired(Incoming)`：鉴权通过但未配对/非消息管道的事件元数据（可选）；
+    - `on_mass(dict)`：mass 合并事件元数据（可选，见 mass_event_metadata）。
+    `async_dispatch=False` 时全部同步调用（测试用）。
+    """
+
+    def __init__(self, registry: OwnerChannelRegistry, *, expected_token: str, self_uin: str,
+                 on_owner_event: Callable[[OwnerEvent], None],
+                 on_unpaired: Callable[[Incoming], None] | None = None,
+                 on_mass: Callable[[dict], None] | None = None,
+                 accept_group: bool = False,
+                 host: str = DEFAULT_WQ_PUSH_HOST, port: int = DEFAULT_WQ_PUSH_PORT,
+                 async_dispatch: bool = True) -> None:
+        if not expected_token:
+            raise ValueError("WeQSsePushListener requires a non-empty token (fail closed)")
+        if not str(self_uin):
+            raise ValueError("self_uin required")
+        self.registry = registry
+        self.expected_token = expected_token
+        self.self_uin = str(self_uin)
+        self.on_owner_event = on_owner_event
+        self.on_unpaired = on_unpaired
+        self.on_mass = on_mass
+        self.accept_group = accept_group
+        self.host = host
+        self.requested_port = port
+        self.async_dispatch = async_dispatch
+        self._seen: dict[str, None] = {}
+        self._dropped = 0
+        self._events: queue.Queue = queue.Queue(maxsize=EVENT_QUEUE_CAPACITY)
+        self._stop = threading.Event()
+        self._worker: threading.Thread | None = None
+        self._server: ThreadingHTTPServer | None = None
+        self._server_thread: threading.Thread | None = None
+
+    # ── 纯逻辑（可单测） ────────────────────────────────────────
+
+    def _mark_seen(self, msg_id: str) -> bool:
+        """首次出现返回 True；有界 LRU 去重（WeQ 至少一次投递）。"""
+        if msg_id in self._seen:
+            return False
+        self._seen[msg_id] = None
+        while len(self._seen) > DEDUP_WINDOW:
+            self._seen.pop(next(iter(self._seen)))
+        return True
+
+    def ingest_events(self, events: list[dict]) -> int:
+        """把解析后的事件送进管道，返回受理条数。同步或入队由 async_dispatch 决定。"""
+        accepted = 0
+        for event in events:
+            if event.get("type") == "mass":
+                accepted += 1
+                self._emit_mass(mass_event_metadata(event))
+                continue
+            incoming = sse_message_to_incoming(event, self_uin=self.self_uin,
+                                               accept_group=self.accept_group)
+            if incoming is None or not self._mark_seen(incoming.message_id):
+                continue
+            owner_event = self.registry.accept(incoming)
+            if owner_event is None:
+                accepted += 1
+                self._emit_unpaired(incoming)
+                continue
+            accepted += 1
+            self._emit_owner(owner_event)
+        return accepted
+
+    def _emit_owner(self, event: OwnerEvent) -> None:
+        if self.async_dispatch:
+            try:
+                self._events.put_nowait(("owner", event))
+            except queue.Full:
+                self._dropped += 1
+        else:
+            self.on_owner_event(event)
+
+    def _emit_unpaired(self, incoming: Incoming) -> None:
+        if self.on_unpaired is None:
+            return
+        if self.async_dispatch:
+            try:
+                self._events.put_nowait(("unpaired", incoming))
+            except queue.Full:
+                self._dropped += 1
+        else:
+            self.on_unpaired(incoming)
+
+    def _emit_mass(self, meta: dict) -> None:
+        if self.on_mass is None:
+            return
+        if self.async_dispatch:
+            try:
+                self._events.put_nowait(("mass", meta))
+            except queue.Full:
+                self._dropped += 1
+        else:
+            self.on_mass(meta)
+
+    def process_payload(self, headers: Mapping[str, str],
+                        body: bytes | None) -> tuple[int, int]:
+        """HTTP 请求 → (状态码, 受理事件数)。401 未鉴权；413 缺失/超限；400 非法载荷。"""
+        authorization: str | None = None
+        for key, value in headers.items():
+            if key.lower() == "authorization":
+                authorization = value
+                break
+        if not bearer_authenticated(authorization, self.expected_token):
+            return 401, 0
+        if body is None or len(body) > MAX_BODY_BYTES:
+            return 413, 0
+        events = parse_push_events(body)
+        if events is None:
+            return 400, 0
+        return 200, self.ingest_events(events)
+
+    # ── 运行时（HTTP 服务 + 工作线程） ─────────────────────────
+
+    @property
+    def port(self) -> int:
+        return int(self._server.server_address[1]) if self._server else self.requested_port
+
+    @property
+    def dropped(self) -> int:
+        """队列满被丢弃的事件数（过载可见性；不静默）。"""
+        return self._dropped
+
+    def start(self) -> None:
+        if self._server is not None:
+            return
+        if self.async_dispatch and self._worker is None:
+            self._worker = threading.Thread(target=self._consume, name="wq-push-worker",
+                                            daemon=True)
+            self._worker.start()
+        listener = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_POST(self):
+                body = self._read_capped_body()
+                code, count = listener.process_payload(dict(self.headers), body)
+                payload = json.dumps({"accepted": count}).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_GET(self):
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def _read_capped_body(self) -> bytes | None:
+                raw = self.headers.get("Content-Length")
+                try:
+                    length = int(raw) if raw is not None else -1
+                except ValueError:
+                    return None
+                if length < 0 or length > MAX_BODY_BYTES:
+                    return None
+                return self.rfile.read(length) if length > 0 else b""
+
+            def log_message(self, *args):
+                pass  # 静默 access log：不含正文、不含 token
+
+        self._server = ThreadingHTTPServer((self.host, self.requested_port), _Handler)
+        self._server.daemon_threads = True
+        self._server_thread = threading.Thread(target=self._server.serve_forever,
+                                               name="wq-push-listener", daemon=True)
+        self._server_thread.start()
+
+    def _consume(self) -> None:
+        while not self._stop.is_set() or not self._events.empty():
+            try:
+                kind, payload = self._events.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                if kind == "owner":
+                    self.on_owner_event(payload)
+                elif kind == "unpaired" and self.on_unpaired is not None:
+                    self.on_unpaired(payload)
+                elif kind == "mass" and self.on_mass is not None:
+                    self.on_mass(payload)
+            except Exception:
+                # 单条事件的业务失败不杀死消费线程；不记录正文。
+                pass
+            finally:
+                self._events.task_done()
+
+    def wait_idle(self, timeout: float | None = None) -> None:
+        """等待队列排空（测试/优雅停机用）。"""
+        self._events.join() if timeout is None else _join_with_timeout(self._events, timeout)
+
+    def stop(self) -> None:
+        self._stop.set()
+        server, thread = self._server, self._server_thread
+        self._server, self._server_thread = None, None
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if thread is not None:
+            thread.join(timeout=5)
+        if self._worker is not None:
+            self._worker.join(timeout=5)
+            self._worker = None
+
+
+def _join_with_timeout(q: queue.Queue, timeout: float) -> None:
+    import time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with q.mutex:
+            if not q.unfinished_tasks:
+                return
+        time.sleep(0.01)
