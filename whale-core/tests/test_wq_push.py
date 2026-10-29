@@ -186,7 +186,9 @@ class StubBrain:
 def make_workflow(**prefs_kw):
     store = InMemoryStore()
     brain = StubBrain()
-    prefs = ProactivePrefs(**prefs_kw) if prefs_kw else None
+    prefs = (ProactivePrefs(**prefs_kw) if prefs_kw else
+             ProactivePrefs(enabled=True, allowed_channels=frozenset({"direct_message"}),
+                            daily_limit=20))
     wf = QqInboundWorkflow(store, brain, prefs=prefs,
                            now_fn=lambda: datetime(2026, 10, 29, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
     return wf, brain, store
@@ -196,6 +198,15 @@ def owner_event(msg_id="m1", text="今晚吃啥"):
     from whale_core.life.channels import OwnerEvent
     return OwnerEvent(owner_id="owner", channel="qq", conversation=f"private:{OWNER_UIN}",
                       message_id=msg_id, text=text)
+
+
+def test_workflow_defaults_disabled_without_explicit_prefs():
+    store = InMemoryStore()
+    brain = StubBrain()
+    wf = QqInboundWorkflow(store, brain)  # no prefs is not consent to invoke an LLM
+    assert wf.handle_owner_event(owner_event()) == {"skipped": "disabled"}
+    assert brain.calls == []
+    assert store.keys() == []
 
 
 def test_workflow_produces_reviewable_draft_and_memory():
