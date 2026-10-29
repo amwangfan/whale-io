@@ -68,6 +68,12 @@ class PluginRegistry:
                 f"provider object is for provider-kind plugins (processor/model/memory), "
                 f"got {resolved.value} plugin {pid!r}"
             )
+        if resolved in PROVIDER_KINDS and (executor is not None or input_adapter is not None):
+            raise ValueError("provider-kind plugins cannot register I/O executors or input adapters")
+        if input_adapter is not None and not manifest.inputs:
+            raise ValueError("input_adapter requires declared manifest inputs")
+        if executor is not None and not manifest.actions:
+            raise ValueError("executor requires declared manifest actions")
         for kind in manifest.inputs:
             owner = self._kind_owner.get(kind)
             if owner is not None and owner != pid:

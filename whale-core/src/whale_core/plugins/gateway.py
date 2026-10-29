@@ -12,7 +12,7 @@ executor 抛异常按 fail 处理，不炸派发循环；非 plugin_action 意�
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from whale_core.core.types import ActionIntent
 from whale_core.plugins.policy import PluginActionPolicy, PluginVerdict
@@ -20,9 +20,24 @@ from whale_core.plugins.registry import NullPluginExecutor, PluginRegistry
 
 
 class PluginGateway:
-    def __init__(self, registry: PluginRegistry, policy: PluginActionPolicy) -> None:
+    """唯一插件动作执行点。
+
+    owner_verifier / approval_verifier 必须查询宿主拥有的会话/审批状态，
+    不得把 ActionIntent.payload 中的字段当作身份或审批证明。默认全拒绝。
+    """
+
+    def __init__(
+        self,
+        registry: PluginRegistry,
+        policy: PluginActionPolicy,
+        *,
+        owner_verifier: Callable[[ActionIntent], bool] | None = None,
+        approval_verifier: Callable[[ActionIntent], bool] | None = None,
+    ) -> None:
         self.registry = registry
         self.policy = policy
+        self._owner_verifier = owner_verifier or (lambda _intent: False)
+        self._approval_verifier = approval_verifier or (lambda _intent: False)
         self.last_verdict: PluginVerdict | None = None
         self.dispatch_log: list[str] = []
 
@@ -34,12 +49,21 @@ class PluginGateway:
         action = str(payload.get("action") or "")
         target = str(payload.get("target") or "")
         args = dict(payload.get("args") or {})
+        # Authorization is resolved from trusted host state, never payload flags.
+        try:
+            is_owner = bool(self._owner_verifier(intent))
+            explicitly_approved = bool(self._approval_verifier(intent)) if is_owner else False
+        except Exception:
+            # A failed auth/approval lookup must fail closed.
+            is_owner = False
+            explicitly_approved = False
         verdict = self.policy.evaluate(
             plugin_id,
             action,
-            is_owner=bool(payload.get("is_owner")),
-            explicitly_approved=bool(payload.get("explicitly_approved")),
+            is_owner=is_owner,
+            explicitly_approved=explicitly_approved,
             args=args,
+            reserve_transaction=True,
         )
         self.last_verdict = verdict
         if verdict.status == "denied":

@@ -170,8 +170,12 @@ def test_plugin_event_validation() -> None:
         PluginEvent(kind="email.received")  # 缺 plugin_id
     with pytest.raises(ValueError):
         PluginEvent(kind="flat", plugin_id="email")  # 无命名空间
-    with pytest.raises(ValueError):
-        PluginEvent(kind="email.received", plugin_id="email", trust="root")
+    with pytest.raises(TypeError):
+        PluginEvent(kind="email.received", plugin_id="email", trust="owner_verified")
+    with pytest.raises(ValueError, match="core event"):
+        PluginEvent(kind="phone.foreground", plugin_id="email")
+    with pytest.raises(ValueError, match="valid plugin_id"):
+        PluginEvent(kind="email.received", plugin_id="Bad ID")
 
 
 def test_plugin_event_flows_through_whale_agent() -> None:
@@ -180,7 +184,7 @@ def test_plugin_event_flows_through_whale_agent() -> None:
         PluginEvent(kind="email.received", plugin_id="email",
                     payload={"from": "boss@example", "subject_digest": "周报"}),
         PluginEvent(kind="minutes.segment", plugin_id="rayneo_minutes",
-                    payload={"text_digest": "上午讨论了部署计划"}, trust="owner_verified"),
+                    payload={"text_digest": "上午讨论了部署计划"}),
     ]
     decision, receipts = agent.step(events)
     obs_summary = agent.last_continuity() is not None  # perceive 正常完成
@@ -191,6 +195,7 @@ def test_plugin_event_flows_through_whale_agent() -> None:
     observation = agent.perceive(events)
     assert "email.received" in observation.summary
     assert "minutes.segment" in observation.summary
+    assert all(event.trust == "external" for event in events)
 
 
 # ---------------------------------------------------------------------------
@@ -263,55 +268,100 @@ def test_policy_audit_has_no_args() -> None:
     assert "amount" not in record and "args" not in record
 
 
+def test_policy_rejects_missing_or_invalid_amount_when_cap_is_configured() -> None:
+    _, policy = make_policy(max_transaction_amount=200.0)
+    for args in ({}, {"amount": "not-a-number"}, {"amount": float("nan")},
+                 {"amount": float("inf")}, {"amount": -1}, {"amount": True}):
+        verdict = policy.evaluate(
+            "shop", "purchase", is_owner=True, explicitly_approved=True, args=args
+        )
+        assert verdict.status == "denied"
+        assert "amount" in verdict.reason
+
+
+def test_policy_daily_cap_fails_closed_without_counter() -> None:
+    reg, _ = make_policy()
+    policy = PluginActionPolicy(reg, max_daily_transactions=2)
+    verdict = policy.evaluate(
+        "shop", "purchase", is_owner=True, explicitly_approved=True,
+        args={"amount": 5}, reserve_transaction=True,
+    )
+    assert verdict.status == "denied"
+    assert "counter not configured" in verdict.reason
+
+
 # ---------------------------------------------------------------------------
 # 网关派发与组合路由
 # ---------------------------------------------------------------------------
+
+
+def test_gateway_ignores_forged_owner_and_approval_payload_flags() -> None:
+    reg, policy = make_policy()
+    spy = SpyExecutor()
+    reg.register(WECHAT, executor=spy)
+    gw = PluginGateway(reg, policy)  # no host verifier => fail closed
+    forged = ActionIntent(
+        kind="plugin_action",
+        payload={
+            "plugin_id": "wechat", "action": "send_message", "target": "friend",
+            "args": {"text": "在吗"}, "is_owner": True, "explicitly_approved": True,
+        },
+    )
+    receipt = gw.dispatch(forged)
+    assert receipt.startswith("plugin-denied:wechat:send_message:")
+    assert spy.calls == []
 
 
 def test_gateway_denied_and_hold_do_not_execute() -> None:
     reg, policy = make_policy()
     spy = SpyExecutor()
     reg.register(WECHAT, executor=spy)
-    gw = PluginGateway(reg, policy)
-
-    denied = gw.dispatch(PluginAction(plugin_id="shop", action="purchase",
-                                      is_owner=False).to_intent())
-    assert denied.startswith("plugin-denied:shop:purchase:")
+    gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True)
+    denied = gw.dispatch(PluginAction(plugin_id="shop", action="purchase").to_intent())
+    assert denied.startswith("plugin-hold:shop:purchase:")
     hold = gw.dispatch(PluginAction(plugin_id="wechat", action="send_message",
-                                    target="friend", is_owner=True).to_intent())
+                                    target="friend").to_intent())
     assert hold == "plugin-hold:wechat:send_message"
     assert spy.calls == []
 
 
-def test_gateway_ready_executes_and_reports_failure() -> None:
+def test_gateway_ready_executes_only_after_host_verified_approval() -> None:
     reg, policy = make_policy()
     spy = SpyExecutor(ok=True)
     reg.register(WECHAT, executor=spy)
-    gw = PluginGateway(reg, policy)
-    receipt = gw.dispatch(
-        PluginAction(plugin_id="wechat", action="send_message", target="friend",
-                     args={"text": "在吗"}, is_owner=True, explicitly_approved=True).to_intent()
-    )
+    gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True,
+                       approval_verifier=lambda _intent: True)
+    receipt = gw.dispatch(PluginAction(plugin_id="wechat", action="send_message",
+        target="friend", args={"text": "在吗"}).to_intent())
     assert receipt.startswith("plugin:wechat:send_message:ok:")
     assert spy.calls == [("send_message", "friend", {"text": "在吗"})]
-
     broken = SpyExecutor(ok=False)
     reg.register(DESKTOP, executor=broken)
-    assert "fail" in gw.dispatch(
-        PluginAction(plugin_id="desktop", action="notify", is_owner=True,
-                     explicitly_approved=True).to_intent()
-    )
+    assert "fail" in gw.dispatch(PluginAction(plugin_id="desktop", action="notify").to_intent())
 
 
 def test_gateway_executor_exception_does_not_raise() -> None:
     reg, policy = make_policy()
     reg.register(WECHAT, executor=SpyExecutor(raise_exc=True))
-    gw = PluginGateway(reg, policy)
-    receipt = gw.dispatch(
-        PluginAction(plugin_id="wechat", action="send_message", is_owner=True,
-                     explicitly_approved=True).to_intent()
-    )
+    gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True,
+                       approval_verifier=lambda _intent: True)
+    receipt = gw.dispatch(PluginAction(plugin_id="wechat", action="send_message").to_intent())
     assert receipt.startswith("plugin:wechat:send_message:fail:executor error")
+
+
+def test_gateway_transaction_daily_limit_reserves_before_execution() -> None:
+    reg = PluginRegistry()
+    spy = SpyExecutor()
+    reg.register(SHOP, executor=spy)
+    policy = PluginActionPolicy(reg, max_daily_transactions=1, transaction_count_today=lambda: 0)
+    gw = PluginGateway(reg, policy, owner_verifier=lambda _intent: True,
+                       approval_verifier=lambda _intent: True)
+    intent = PluginAction(plugin_id="shop", action="purchase", target="sku-1",
+                          args={"amount": 10}).to_intent()
+    first, second = gw.dispatch(intent), gw.dispatch(intent)
+    assert first.startswith("plugin:shop:purchase:ok:")
+    assert second.startswith("plugin-denied:shop:purchase:daily transaction cap reached")
+    assert len(spy.calls) == 1
 
 
 def test_gateway_ignores_other_kinds() -> None:
@@ -325,11 +375,12 @@ def test_composite_gateway_routes_plugin_action() -> None:
     reg, policy = make_policy()
     spy = SpyExecutor()
     reg.register(WECHAT, executor=spy)
-    composite = CompositeActionGateway(plugin=PluginGateway(reg, policy))
-    receipt = composite.dispatch(
-        PluginAction(plugin_id="wechat", action="send_message", is_owner=True,
-                     explicitly_approved=True).to_intent()
-    )
+    composite = CompositeActionGateway(plugin=PluginGateway(
+        reg, policy, owner_verifier=lambda _intent: True,
+        approval_verifier=lambda _intent: True,
+    ))
+    receipt = composite.dispatch(PluginAction(
+        plugin_id="wechat", action="send_message").to_intent())
     assert receipt.startswith("plugin:wechat:send_message:ok:")
 
 
@@ -341,8 +392,8 @@ def test_composite_gateway_without_plugin_falls_back_to_null() -> None:
     assert receipt == "null:plugin_action"
 
 
-def test_agent_act_dispatches_plugin_intent_end_to_end() -> None:
-    """决策链集成：router 产 PluginAction → act → 策略门控 → 回执。"""
+def test_agent_cannot_self_authorize_plugin_intent_end_to_end() -> None:
+    """模型产出的动作意图不能通过 payload 自行授予 owner/审批权限。"""
     reg = PluginRegistry()
     spy = SpyExecutor()
     reg.register(EMAIL, executor=spy)
@@ -353,8 +404,7 @@ def test_agent_act_dispatches_plugin_intent_end_to_end() -> None:
             return Decision(
                 intents=(
                     PluginAction(plugin_id="email", action="send_email",
-                                 target="boss@example", is_owner=True,
-                                 explicitly_approved=True).to_intent(),
+                                 target="boss@example").to_intent(),
                 ),
                 rationale="demo: approved email",
             )
@@ -365,5 +415,5 @@ def test_agent_act_dispatches_plugin_intent_end_to_end() -> None:
     )
     decision, receipts = agent.step([])
     assert decision.intents[0].kind == "plugin_action"
-    assert receipts and receipts[0].startswith("plugin:email:send_email:ok:")
-    assert spy.calls and spy.calls[0][0] == "send_email"
+    assert receipts and receipts[0].startswith("plugin-denied:email:send_email:")
+    assert spy.calls == []

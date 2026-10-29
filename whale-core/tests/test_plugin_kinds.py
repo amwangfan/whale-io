@@ -119,6 +119,18 @@ def test_registry_rejects_provider_object_on_io_plugin() -> None:
         reg.register(DESKTOP_NOTIFY, provider=object())
 
 
+def test_registry_enforces_io_and_provider_registration_boundaries() -> None:
+    reg = PluginRegistry()
+    with pytest.raises(ValueError, match="provider-kind plugins cannot register I/O"):
+        reg.register(QWEN_MODEL, input_adapter=object())
+    with pytest.raises(ValueError, match="provider-kind plugins cannot register I/O"):
+        reg.register(QWEN_MODEL, executor=object())
+    with pytest.raises(ValueError, match="input_adapter requires"):
+        reg.register(DESKTOP_NOTIFY, input_adapter=object())
+    with pytest.raises(ValueError, match="executor requires"):
+        reg.register(FG_MONITOR, executor=object())
+
+
 # ---------------------------------------------------------------------------
 # ProcessorRouter：门控、截断与审计
 # ---------------------------------------------------------------------------
@@ -187,7 +199,8 @@ def test_router_audit_minimizes_privacy_surface() -> None:
     result = router.route(request)
     record = router.audit(request, result, "qwen_executor")
     assert record["status"] == "done" and record["processor"] == "qwen_executor"
-    assert len(record["task_digest"]) <= 200
+    assert len(record["task_digest"]) == 64
+    assert "敏感任务全文" not in str(record)
     dumped = str(record)
     assert "S3CRET" not in dumped and "secret_cfg" not in dumped
 
@@ -251,7 +264,7 @@ def test_context_isolation_raw_output_never_flows_back() -> None:
     ])
     runner = SpyRunner({"tail_bridge_log": (True, secret_blob)})
     proc = DelegatingIntentProcessor(model, tool_runner=runner, max_tool_output_chars=500)
-    result = proc.process(make_request())
+    result = proc.process(make_request(constraints={"allowed_tools": ("tail_bridge_log",)}))
     assert result.status == "done"
     assert secret_blob not in result.summary
     assert "RAW_OUTPUT_TOKEN_LEAK_" not in " ".join(result.receipts)
@@ -274,12 +287,25 @@ def test_delegation_respects_allowed_tools() -> None:
     assert "purchase:denied-not-allowed" in result.receipts
 
 
+def test_delegation_without_allowlist_fails_closed() -> None:
+    model = ScriptedModel([
+        '{"tool": "purchase", "args": {"sku": "1"}}',
+        '{"final": "没有获准工具，未执行"}',
+    ])
+    runner = SpyRunner()
+    proc = DelegatingIntentProcessor(model, tool_runner=runner)
+    result = proc.process(make_request())
+    assert result.status == "done"
+    assert runner.calls == []
+    assert "purchase:denied-not-allowed" in result.receipts
+
+
 def test_delegation_gated_receipt_becomes_needs_approval() -> None:
     """门控回执（plugin-hold 等）→ 立即 needs_approval，执行器模型不能代批。"""
     model = ScriptedModel(['{"tool": "send_email", "args": {"to": "boss"}}'])
     runner = SpyRunner({"send_email": (False, "plugin-hold:email:send_email")})
     proc = DelegatingIntentProcessor(model, tool_runner=runner)
-    result = proc.process(make_request())
+    result = proc.process(make_request(constraints={"allowed_tools": ("send_email",)}))
     assert result.status == "needs_approval"
     assert "人工审批" in result.summary
     assert result.receipts == ("send_email:fail",)
@@ -295,7 +321,7 @@ def test_delegation_runner_exception_and_round_cap() -> None:
     ])
     runner = SpyRunner(raise_on="web_search")
     proc = DelegatingIntentProcessor(model, tool_runner=runner, max_rounds=3)
-    result = proc.process(make_request())
+    result = proc.process(make_request(constraints={"allowed_tools": ("web_search",)}))
     assert result.status == "failed" and "rounds exhausted" in result.summary
     assert result.receipts == ("web_search:fail",) * 3
 

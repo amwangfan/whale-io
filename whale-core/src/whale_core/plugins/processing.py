@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -119,7 +120,7 @@ class ProcessorRouter:
             "processor": processor_id,
             "source": request.source,
             "status": result.status,
-            "task_digest": request.task[:200],
+            "task_digest": hashlib.sha256(request.task.encode("utf-8", errors="replace")).hexdigest(),
             "receipts": list(result.receipts),
             "at": _utc_now(),
         }
@@ -193,7 +194,14 @@ class DelegatingIntentProcessor:
         self.max_summary_chars = max_summary_chars
 
     def process(self, request: ProcessingRequest) -> ProcessingResult:
-        allowed = tuple(request.constraints.get("allowed_tools") or ())
+        raw_allowed = request.constraints.get("allowed_tools", ())
+        if isinstance(raw_allowed, (list, tuple, set, frozenset)):
+            allowed = tuple(
+                item.strip() for item in raw_allowed
+                if isinstance(item, str) and item.strip()
+            )
+        else:
+            allowed = ()
         system = (
             "你是操作执行器。用允许的工具完成任务，每轮只输出一个 JSON 对象："
             '{"tool": "名称", "args": {...}} 或 {"final": "给委托方的摘要"}。'
@@ -228,7 +236,7 @@ class DelegatingIntentProcessor:
                 messages.append({"role": "assistant", "content": str(raw)[:500]})
                 messages.append({"role": "user", "content": 'JSON 需要 "tool" 或 "final" 键。'})
                 continue
-            if allowed and tool not in allowed:
+            if tool not in allowed:
                 receipts.append(f"{tool}:denied-not-allowed")
                 messages.append({"role": "assistant", "content": str(raw)[:500]})
                 messages.append({"role": "user", "content": f"工具 {tool} 不在允许清单，换一个或输出 final。"})

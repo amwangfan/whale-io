@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
+from threading import Lock
 from typing import Any, Callable, Mapping
 
 from whale_core.plugins.manifest import RiskClass
@@ -52,12 +54,21 @@ class PluginActionPolicy:
         *,
         max_transaction_amount: float | None = None,
         max_daily_transactions: int | None = None,
-        transaction_count_today: Callable[[], int] = lambda: 0,
+        transaction_count_today: Callable[[], int] | None = None,
     ) -> None:
+        if max_transaction_amount is not None and (
+            not math.isfinite(max_transaction_amount) or max_transaction_amount < 0
+        ):
+            raise ValueError("max_transaction_amount must be finite and non-negative")
+        if max_daily_transactions is not None and max_daily_transactions < 0:
+            raise ValueError("max_daily_transactions must be non-negative")
         self.registry = registry
         self.max_transaction_amount = max_transaction_amount
         self.max_daily_transactions = max_daily_transactions
         self._txn_count = transaction_count_today
+        self._txn_lock = Lock()
+        self._reservation_day = datetime.now(timezone.utc).date()
+        self._reserved_transactions = 0
 
     def evaluate(
         self,
@@ -67,6 +78,7 @@ class PluginActionPolicy:
         is_owner: bool = False,
         explicitly_approved: bool = False,
         args: Mapping[str, Any] | None = None,
+        reserve_transaction: bool = False,
     ) -> PluginVerdict:
         manifest = self.registry.manifest(plugin_id)
         if manifest is None:
@@ -107,15 +119,51 @@ class PluginActionPolicy:
                 risk.value, plugin_id, action,
             )
         amount = _amount_of(args)
-        if self.max_transaction_amount is not None and amount > self.max_transaction_amount:
-            return PluginVerdict(
-                "denied", f"amount {amount:g} over cap {self.max_transaction_amount:g}",
-                risk.value, plugin_id, action,
-            )
-        if self.max_daily_transactions is not None and self._txn_count() >= self.max_daily_transactions:
-            return PluginVerdict(
-                "denied", "daily transaction cap reached", risk.value, plugin_id, action,
-            )
+        if self.max_transaction_amount is not None:
+            if amount is None:
+                return PluginVerdict(
+                    "denied", "transaction amount missing or invalid",
+                    risk.value, plugin_id, action,
+                )
+            if amount > self.max_transaction_amount:
+                return PluginVerdict(
+                    "denied", f"amount {amount:g} over cap {self.max_transaction_amount:g}",
+                    risk.value, plugin_id, action,
+                )
+        if self.max_daily_transactions is not None:
+            if self._txn_count is None:
+                return PluginVerdict(
+                    "denied", "daily transaction counter not configured",
+                    risk.value, plugin_id, action,
+                )
+            # Serialize check+reservation so concurrent dispatches cannot all pass
+            # against the same count. Reservations are conservative: a failed executor
+            # still consumes this process's daily allowance.
+            with self._txn_lock:
+                today = datetime.now(timezone.utc).date()
+                if today != self._reservation_day:
+                    self._reservation_day = today
+                    self._reserved_transactions = 0
+                try:
+                    external_count = int(self._txn_count())
+                except Exception:
+                    return PluginVerdict(
+                        "denied", "daily transaction counter unavailable",
+                        risk.value, plugin_id, action,
+                    )
+                if external_count < 0:
+                    return PluginVerdict(
+                        "denied", "daily transaction counter invalid",
+                        risk.value, plugin_id, action,
+                    )
+                used = max(external_count, self._reserved_transactions)
+                if used >= self.max_daily_transactions:
+                    return PluginVerdict(
+                        "denied", "daily transaction cap reached",
+                        risk.value, plugin_id, action,
+                    )
+                if reserve_transaction:
+                    self._reserved_transactions = used + 1
         return PluginVerdict("ready", "approved transaction within caps", risk.value, plugin_id, action)
 
     def audit(self, target: str, verdict: PluginVerdict, *, source: str = "") -> dict:
@@ -128,8 +176,16 @@ class PluginActionPolicy:
         }
 
 
-def _amount_of(args: Mapping[str, Any] | None) -> float:
+def _amount_of(args: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(args, Mapping) or "amount" not in args:
+        return None
+    raw = args.get("amount")
+    if isinstance(raw, bool):
+        return None
     try:
-        return float((args or {}).get("amount") or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
+        amount = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(amount) or amount < 0:
+        return None
+    return amount

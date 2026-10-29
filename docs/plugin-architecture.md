@@ -12,7 +12,7 @@
 |------|------|--------|
 | `PluginManifest` | 能力声明：`inputs`（命名空间事件 kind）+ `actions` + 每个动作的 `action_risk` | 注册时校验；**事件不得冒充核心 kind**（`phone.*` 等前缀拒绝）；**动作名禁止 shell/exec/run 等保留字** |
 | `PluginRegistry` | plugin_id → manifest + executor + input_adapter | **显式注册，无自动发现**（不扫 entry_points、不读 env 自动连——qq_onebot 同款约定）；事件 kind 全局唯一归属 |
-| `PluginEvent` | 泛化输入：`PerceptionEvent` 子类（kind + plugin_id + payload + trust） | 直接进 `WhaleAgent.perceive` 既有链路，核心零改动 [已测试] |
+| `PluginEvent` | 泛化输入：`PerceptionEvent` 子类（kind + plugin_id + payload；trust 固定 external） | 拒绝核心事件命名空间与非法 plugin_id；不能自声明 owner_verified |
 | `PluginAction` | 泛化输出：意图 kind `plugin_action`（plugin_id + action + target + args） | 风险级**不由意图自declare**，执行时从 manifest 解析，防伪造提权 |
 | `PluginActionPolicy` | 风险门控（下节矩阵） | 未注册插件 / 未声明动作 / 未声明风险级一律 denied |
 | `PluginGateway` | `ActionGateway` 实现，**策略内嵌的单一执行点** | 拒绝不静默：`plugin-denied:*` / `plugin-hold:*` 回执；挂进 `CompositeActionGateway(plugin=...)` |
@@ -74,8 +74,8 @@ sequenceDiagram
 | `transaction` | 买东西、下单、支付 | denied | needs_approval | **ready**（且过单笔限额 + 日限） |
 | 未声明 | — | denied（任何情况，含显式批准） | | |
 
-- **所有插件动作都要求认证 owner**（`is_owner` 由宿主可信路径注入——`OwnerChannelRegistry` 配对成功后，与 `Incoming.meta.owner_authenticated` 同一信任模型；不从外部原文读取，不可自升）。
-- **transaction 每笔单独人审**：`max_transaction_amount` 单笔限额 + `max_daily_transactions` 日限（计数由宿主接台账）；不存在「auto_send 代批交易」。
+- **所有插件动作都要求认证 owner**：`PluginAction` payload 不包含 `is_owner` / `explicitly_approved`；`PluginGateway` 通过宿主注入的 `owner_verifier` / `approval_verifier` 查询可信会话与审批台账。默认 verifier 全拒绝，异常也 fail-closed。
+- **transaction 每笔单独人审**：`max_transaction_amount` 配置后，缺失/非法金额一律拒绝；`max_daily_transactions` 必须接入可用的宿主计数器，网关派发前原子预留本进程额度，避免并发超限。失败尝试保守地消耗本进程额度；不存在「auto_send 代批交易」。
 - 台账（`PluginActionPolicy.audit`）只记动作与裁决，**不记 args 全文**（隐私/凭据面最小化）；executor 回执限 120 字且不得含密钥（bridge_tools 脱敏同款约定）。
 - 设计说明：`plugin_action` **不进** `SafeDefaultPolicy.SENSITIVE`——它的 fail-closed 门控内嵌在 `PluginGateway`（唯一执行点），再叠加一层会把已批准动作也吞掉。
 
@@ -122,12 +122,16 @@ registry.register(
     executor=MyEmailExecutor(),      # 插件进程/SDK 调用在 executor 内，核心不 import
     input_adapter=MyEmailPoller(),   # PerceptionAdapter：poll() 产 PluginEvent
 )
-gateway = CompositeActionGateway(plugin=PluginGateway(registry, PluginActionPolicy(registry)))
+# verifier 必须查询宿主持有的会话/审批状态；默认未配置时所有动作均拒绝。
+gateway = CompositeActionGateway(plugin=PluginGateway(
+    registry, PluginActionPolicy(registry),
+    owner_verifier=host_owner_verifier,
+    approval_verifier=host_approval_verifier,
+))
 
-# 决策侧产意图（is_owner 由宿主在 OwnerChannelRegistry 配对成功后注入）：
+# 决策侧只产动作意图，不携带身份/审批声明：
 intent = PluginAction(plugin_id="email", action="send_email", target="boss@example",
-                      args={"subject": "周报", "body_digest": "..."},
-                      is_owner=True, explicitly_approved=False).to_intent()
+                      args={"subject": "周报", "body_digest": "..."}).to_intent()
 receipt = gateway.dispatch(intent)   # → "plugin-hold:email:send_email"（待审批）
 ```
 
@@ -170,16 +174,16 @@ result = router.route(ProcessingRequest(
 
 1. **shell 唯一入口**：插件动作名保留字（shell/exec/execute/system/command/run/spawn/eval）注册即拒——任意命令只能走 [cloud-operations §3](cloud-operations.md) 的 managed/safe/personal 分档 + 宿主机沙箱。
 2. **事件不冒充核心**：核心 kind 与核心命名空间前缀（phone./schedule./location./ambient./context./nav.）拒绝注册；事件 kind 全局唯一归属，跨插件冲突拒绝。
-3. **trust / is_owner 不可自升**：`PluginEvent.trust=owner_verified` 与 `PluginAction.is_owner=True` 只能由宿主可信路径设置；策略不因其「声称」而放宽（紧急不可自升同款原则）。
+3. **身份与审批不可自升**：`PluginEvent` 固定为 external，且拒绝核心事件 kind；`PluginAction` 不携带 owner/审批字段；`PluginGateway` 只接受宿主可信 verifier 结果，默认 fail-closed.
 4. **风险未声明即拒绝**：manifest 没写 `action_risk` 的动作，显式批准也 denied。
 5. **交易强约束**：transaction 每笔人审 + 限额 + 日限；失败回执不自动重试（`unknown` 语义沿用 Outbox）。
 6. **采集边界**：语音/视频/桌面类插件只入元数据与摘要文本，原始音频、截屏字节不入记忆库（ambient 既有约定）。
-7. **processor 无直接副作用**：内部处理型的工具调用必须经宿主注入的受门控执行入口（ShellPolicy / PluginGateway）；遇 `plugin-hold` / `needs_approval` 回执立即转人审，执行器模型不能代批；回流摘要被 Router 强制截断（上下文隔离最后防线）。
-8. **门控不可插件化**：Initiative 频控、ShellPolicy 分档、OwnerChannelRegistry 身份门、PluginActionPolicy 风险矩阵是核心安全不变量——不存在能替换或削弱它们的插件类型（processor/model/memory 只提供能力，不提供裁决）。
+7. **processor 无直接副作用**：内部处理型的工具调用必须经宿主注入的受门控执行入口（ShellPolicy / PluginGateway）；`allowed_tools` 缺失或格式非法时按空清单处理，任何工具都不得执行；遇 `plugin-hold` / `needs_approval` 回执立即转人审，执行器模型不能代批；回流摘要被 Router 强制截断（上下文隔离最后防线）。
+8. **门控不可插件化**：Initiative 频控、ShellPolicy 分档、OwnerChannelRegistry 身份门、PluginActionPolicy 风险矩阵是核心安全不变量——不存在能替换或削弱它们的插件类型（processor/model/memory 只提供能力，不提供裁决）。provider 类不得挂载 I/O executor 或 input adapter.
 
 ## 7. 状态与验收
 
-- **[已测试]**（53 项）：清单校验（冒充/保留字/形状/**六分类推断与一致性/provider 不得带 I/O**）、注册表（重复/kind 冲突/注销/**provider 挂载与能力解析**）、`PluginEvent` 进 `WhaleAgent` 链路、门控矩阵全格、限额/日限、审计不落 args、网关三态回执、executor 异常不炸派发、Composite 路由、agent 端到端、**ProcessorRouter（未注册 denied/未接线 failed/摘要与回执截断/审计脱敏）、DelegatingIntentProcessor（委托循环/原始输出不回流/allowed_tools 约束/门控回执转人审/rounds 上限/非 JSON 容错/围栏解析）**。
+- **[已测试]**：清单校验（核心事件冒充/保留字/形状/六分类一致性）、注册表 I/O/provider 边界、`PluginEvent` 身份与 kind 校验、门控矩阵、伪造 owner/审批字段拒绝、交易金额 fail-closed 与日限预留、审计脱敏、网关三态回执、executor 异常处理、Composite 路由、agent 不能自批、ProcessorRouter 摘要截断/审计哈希、DelegatingIntentProcessor 空 allowlist 拒绝工具。具体总数以 CI 实际结果为准.
 - **[规划，P1]**：第一个真实外置插件样例（邮件 IMAP 只读 + 桌面通知）；`plugin_action` 与 `ProactiveOutbox` 的组合模板（communicate 动作默认走草稿审批流）；宿主插件配置文件（manifest JSON 目录 + token 分离）。
 - **[规划，P2]**：微信协议端适配（外置进程，风控责任同 QQ OneBot 声明）；购物 executor 对接真实商城 API（限额从 env 注入）。
 - 验收口径：**新增一个 I/O 点 = 新 manifest + executor/adapter + 宿主一行 register()，核心零改动**；任何插件动作可在台账回答「谁触发、什么风险级、谁批准」。
