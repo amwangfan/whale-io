@@ -95,7 +95,7 @@ Environment=HOME=/root
 ExecStart=/opt/QQ/qq --no-sandbox
 Restart=on-failure
 RestartSec=10
-MemoryMax=1536M
+MemoryMax=2G
 
 [Install]
 WantedBy=multi-user.target
@@ -191,8 +191,9 @@ Windows 侧停掉旧 runner/WeQ**（避免双端抢会话）。
 - **秘密卫生**：两个 env 文件 600；令牌/密钥永不进日志、命令行历史（用文件读入变量）、
   报告文本。
 - 不要改 weq-web.service 的 WEQ_HOST（保持 127.0.0.1；外部访问一律 SSH 隧道）。
-- 机器是共享的（跑着 campustrust、sftpgo、nginx 等）：新服务都加 MemoryMax，
-  不动已有 unit。
+- 机器是共享的（跑着 campustrust、sftpgo、nginx 等）：whale 栈内存总预算 **5G**
+  （QQ 2G + weq-web 2G + runner 512M ≈ 4.5G，余量给 Xvfb），所有新 unit 都带
+  MemoryMax；不动已有 unit。
 
 ## 5. 验收清单（全勾才算完）
 
