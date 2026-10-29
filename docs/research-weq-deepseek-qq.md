@@ -236,6 +236,34 @@ stringify+fsync 下限**（12MB 记忆库每次 touch 仍 ~650ms），且启动�
 迁移只落盘不灌缓存（保持惰性加载收益）；部署引擎已换入本机安装的 WeQ
 （原件备份 `bot.mjs.orig-2.3.2`）。分支 `whaleio/bot-engine` 已推 fork 备份。
 
+### 7.2 部署线桌面裁剪与在线配置（2026-10-29 晚）
+
+**代码剥离（`bdff0243`，whaleio/bot-engine）**：
+- **Tailscale 组件熔断**：`setTailscaleEnabled(true)`/`setMode(非 lan)`/`changeNetwork`
+  一律可读拒绝；`startTailscale` 保险丝短路（含历史状态自动重启路径），永不起 tsnet
+  子进程；设置界面隐藏 Tailscale IP 行、启停/登录/换网按钮、嵌入 Key 复选框与
+  跨网络说明；导航目录移除定位入口。**局域网 Remote 完整保留**（辅助程序同时承载
+  LAN 入口，故 22.5MB 二进制仍随包——本机无 Go 工具链，构建钩子移除，改为复用
+  官方安装版二进制 + 存在性校验）。
+- **LLM 厂商目录收敛**：上游 7 家模板（硅基流动/DeepSeek 官方/智谱/Moonshot/百炼/
+  OpenAI/Ollama）移除，只留「AgentScope（whale-io 专用）」（预填
+  `platform.agentscope.io/v1` + 8 个 chat 模型）与「OpenAI 兼容（自定义）」逃生口。
+- 验证：desktop typecheck ✓；remote_*/settings_catalog/api_providers_ui 7 文件 85 例 ✓；
+  agentlab+service 131/132（1 例为 Windows symlink EPERM 平台差异，与改动无关）。
+
+**在线配置（tRPC 写入，免重启、web token 不轮换）**：
+- WeQ `agentLab.providers` = AgentScope（8 模型全 chat 能力；该平台无 embedding/
+  vision/TTS 模型 → 向量召回与语音保持关闭，记忆走关键词召回）。
+- 默认模型 `deepseek-v4.1-flash-1017`（平台偶发 503 RESOURCE_EXHAUSTED 时可切
+  滚动版 `deepseek-v4.1-flash`，实测更快）。
+
+**实况闭环（已验证）**：主账号两条真实消息 → WeQ SSE → runner 配对 → DeepSeek
+草稿 → 审批 → WeQ Web `sendElements` 实发 → 账本 `accepted (sent to channel)`。
+
+**自建桌面端**：native 产物按锚定 tag 拉取（GitHub 瞬断重试即成）；web 资源
+vite 构建通过；`build:unpack` 产出 win-unpacked 后换入运行（回退 = 直接重启
+官方安装版，数据目录 `%APPDATA%\weq` 两版共享）。
+
 ## 8. 参考
 
 - WeQ 仓库/文档：<https://github.com/weq-devs/WeQ>（guide：assistant / agentlab / mcp-server /
