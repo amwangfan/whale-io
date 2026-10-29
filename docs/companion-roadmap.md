@@ -1,6 +1,8 @@
 # 陪伴系统状态、依赖与验收
 
 > 2026-10-28：此表区分“纯 Python 代码已测试”“有真实基础设施代码”“仍是计划”。不要把代码文件存在当成可用产品。部署仍需另行验证。每轮合并后须更新该表。
+>
+> 2026-10-29：P1-4 QQ 渠道的 WeQ 入站/出站已实发验证（result=0），评审修复（默认关、SSE 去重并发安全、重试队列溢出）已合入；新增 P1-6 角色卡行（已合并，含 Omni/DeepSeek 提示接入）。真机联调仍未做。
 
 | 工作包 | 当前状态 | 已有代码/输入 | 离用户真实体验还缺 | 通过标准 |
 | --- | --- | --- | --- | --- |
@@ -11,8 +13,9 @@
 | P1-1 内部状态与未尽话题 | 新增可测试原型 | `life/state.py`、`life/runtime.py` | 来自真实用户输入的候选提炼与纠正 | 能保留未完事项；用户可取消且不诱导依赖 |
 | P1-2 自主发现 | 新增纯规划器 | `life/discovery.py` | 合法内容源、浏览/字幕/分析适配器、调度器 | 有来源且按用户兴趣生成私有草稿，不捏造经历 |
 | P1-3 反馈账本 | 记录可用 | `ProactiveOutbox.feedback` | 反馈自动作用于权重/限额 | “不感兴趣”后相似内容减少；“别打电话”立即拦截 |
-| P1-4 渠道身份 | 契约+适配器已单测 | `life/channels.py`、`life/qq_onebot.py`（OneBot v11 入站桥/HTTP 监听/出站受理，默认关、需 token，未真机联调） | NapCat 等协议端实机联调、账号授权 UI、手机/眼镜 channel adapters | 只接受已配对 owner，群聊/未授权用户不可驱动私人动作 |
+| P1-4 渠道身份 | 契约+适配器已单测；WeQ 链路已实发验证（result=0） | `life/channels.py`、`life/qq_onebot.py`（OneBot v11 入站/出站受理）、`life/wq_push.py`（WeQ SSE 入站）、`life/qq_workflow.py` + `life/weq_send.py`（AI 工作流 + Web 出站；默认关、显式授权、每日上限+静默时段风控）；评审修复已合入（SSE 去重并发安全、重试队列溢出） | NapCat 等协议端实机联调、账号授权 UI、手机/眼镜 channel adapters | 只接受已配对 owner，群聊/未授权用户不可驱动私人动作 |
 | P1-5 HUD 与通话发送 | 有基础设施 / 智能层契约 | Turbo-IO 外部，VoIP 桥，DashboardGateway | 真实发送 Port、HTTPS 合约/回执、真机联调 | 提醒上镜、拒接无重复、可见证据 |
+| P1-6 角色卡（表达层） | 已合并，单测覆盖 | `ui/persona_cards.py`（内置 7 卡 + 社区卡导入，GLOBAL_TABOOS 硬并入，切换只写 `persona:*` 键）；已接入 DeepSeek prompt 与 Omni realtime 指令 | 切换入口 UI、真实音色映射（`VoiceStyle.provider_hint` 仍为空）、HUD 呈现 | 换卡不扩权；导入卡防注入；多端人格一致 |
 | P2-1 自主日记/兴趣发展 | 产品目标 | 参考项目设计；状态/发现候选基础 | 短时任务调度、兴趣更新、验证与用户控制 | 写实来源、节制分享、可随时暂停 |
 | P2-2 多端同步服务 | 未实现 | `SqliteMemoryStore` 仅适合单实例 | owner 隔离、存储加密、认证 API、数据迁移 | 手机、眼镜、电话、文字引用同一记忆版本 |
 | P2-3 角色外观/像素惊喜 | 只有意图字段 | `ui/WhaleLook` | 资源、动画与真实 HUD 渲染适配器 | 有设计规格、有眼镜兼容性测试 |
