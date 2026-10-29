@@ -130,6 +130,37 @@ ssh -L 看画面）。
 4. **runner 令牌对齐**：把 `/opt/whale/secrets/qq_workflow.env` 的 `WEQ_WEB_TOKEN=`
    行更新为 weq-web.env 里的 WEQ_TOKEN 值（`WEQ_WEB_URL=http://127.0.0.1:7690` 不变）。
 
+### D0. 先诊断「未找到 QQ 的 major.node」（2026-10-29 夜新增）
+
+现象：WeQ UI 报「QQ 安装可能已损坏或版本不受支持。未找到 QQ 的 major.node，无法确定 subAppId。」
+但实测 `/opt/QQ/resources/app/major.node` **存在**。WeQ 探测逻辑（packages/platform/src/linux/paths.ts）：
+`findQqExe()` 取 `WEQ_QQ_EXE`（存在即用）否则候选表第一个存在的（/opt/QQ/qq …），
+然后 major.node = **`join(exe, '..', 'resources', 'app', 'major.node')`**（词法归一）。
+因此报错仅两种可能：**取密钥时 QQ 尚未装好/正在重启（瞬时态）**，或 **WEQ_QQ_EXE 指向了
+/opt/QQ 目录之外的包装器**（如 /usr/local/bin/qq-headless → 相对路径解析到错误目录）。
+
+诊断步骤：
+```bash
+# 1) 三件套都在？（qq-headless 必须在 /opt/QQ/ 里面）
+ls -la /opt/QQ/qq /opt/QQ/qq-headless /opt/QQ/resources/app/major.node
+# 2) weq-web 运行进程的真实 env（不是 unit 文件，是进程）
+pid=$(systemctl show -p MainPID --value weq-web)
+tr '\0' '\n' < /proc/$pid/environ | grep -E 'WEQ_QQ_EXE|WEQ_HOST'
+# 3) 用 WeQ 同款逻辑复现解析
+/opt/node-v24.21.0/bin/node -e '
+const {existsSync}=require("fs"), {join}=require("path");
+const c=[process.env.WEQ_QQ_EXE,"/opt/QQ/qq","/usr/share/QQ/qq","/usr/lib/QQ/qq"].filter(Boolean);
+for(const p of c){ if(existsSync(p)){ const m=join(p,"..","resources","app","major.node");
+  console.log("exe:",p,"-> major:",m,existsSync(m)); break; } }' 
+# （在 weq-web 同款环境下跑：env WEQ_QQ_EXE=<第2步的值> /opt/node-v24.21.0/bin/node -e …）
+```
+修复分支：
+- 若 qq-headless 不在 /opt/QQ/ 内 → 把包装器**移到 /opt/QQ/qq-headless**（unit 已指这里），
+  `systemctl daemon-reload && systemctl restart weq-web`；
+- 若三件套与 env 都正确 → 是瞬时态：确认 `systemctl is-active qq` 后直接在 UI/tRPC 重试
+  「取密钥」，应不再报错；
+- 修好后 `grep -iE 'major|subAppId|attach' /opt/whale/weq-data/logs/*.log | tail -20` 复核。
+
 ### D. 扫码登录（⚠ 需要用户配合，到这步先暂停向用户要人）
 
 weq-web 绑定 127.0.0.1，用户笔记本走 SSH 隧道访问 UI：
