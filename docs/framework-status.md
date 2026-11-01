@@ -7,7 +7,10 @@
 >   （rayneo.wangfanlab.conf）→ turbo-dashboard:18796。`deviceConnected:false` = 等 vc258 实验宿主接入。
 > - **手机侧就位**：Magic8 Pro（BKQ-AN10 / Android 17）ADB 在线；官方宿主 `com.rayneo.venus.pub`
 >   v1.0.10 运行中并向外提供 fe35/fe36 GATT 服务；眼镜蓝牙已连（用户确认 + GATT 活跃）。
->   验机测试通知已发送（`cmd notification post`），镜片显示待用户目视确认。
+>   **验机通过（19:12，用户目视双确认）**：`cmd notification post` 的测试通知同时出现在
+>   镜片与手机通知栏——官方宿主对 shell 来源通知也全量镜像（无白名单限制），
+>   意味着「adb → 通知 → venus → 镜片」可作本地演示/降级显示的兜底通路
+>   （云端链路仍需 vc258 轮询 dashboard，见阻塞）。
 > - **新异常：东京 sshd 不可达**（tailscale 100.100.154.46:22 拒连；tailscaled/nginx/dashboard
 >   均正常）——管理通道丢失，需阿里云控制台恢复；恢复前东京侧只做 HTTP 面操作。
 > 旧记录（已过时）：~~N100 上 dashboard-service 未部署~~（核查对象错了机器，见上）。刷固件仍暂停。
@@ -48,7 +51,7 @@
 
 ### P1（硬件已到，2026-11-01 起进行中）
 
-1. 眼镜：官方宿主配对验机 → vc258 实验宿主 → 通知 / HUD 卡片真显、互动提示
+1. 眼镜：官方宿主配对验机 **✅ 2026-11-01 通过（镜片+通知栏双确认）** → vc258 实验宿主（待取回）→ 通知 / HUD 卡片真显、互动提示
 2. 端到端：云端卡片意图 → dashboard → 手机 → 上镜
 3. 固件：仅在有书面说明后刷机
 
