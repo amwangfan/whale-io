@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import hmac
 import json
 import os
 import queue
@@ -43,12 +44,12 @@ _stats = {"rings": 0, "delivered": 0, "polls": 0, "started": time.time()}
 
 def _auth(params: dict[str, str], headers) -> bool:
     if not TOKEN:
-        return True
+        return False
     auth = headers.get("Authorization") if headers else None
-    if auth and auth.lower().startswith("bearer ") and auth[7:].strip() == TOKEN:
+    if auth and auth.lower().startswith("bearer ") and hmac.compare_digest(auth[7:].strip(), TOKEN):
         return True
-    tok = params.get("token") or headers.get("X-Ring-Token") if headers else ""
-    return (tok or "") == TOKEN
+    tok = headers.get("X-Ring-Token", "") if headers else ""
+    return hmac.compare_digest(tok or "", TOKEN)
 
 
 def _ring_msg(params: dict[str, Any]) -> dict[str, Any]:
@@ -439,6 +440,8 @@ def main() -> None:
     ap.add_argument("--host", default=HOST)
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
+    if args.host not in ("127.0.0.1", "localhost", "::1") and not TOKEN:
+        ap.error("SIGNAL_TOKEN is required for non-loopback listeners")
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(

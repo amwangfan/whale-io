@@ -442,6 +442,8 @@ def main() -> None:
     ap.add_argument("--host", default=HOST)
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
+    if args.host not in ("127.0.0.1", "localhost", "::1") and not TOKEN:
+        ap.error("SIGNAL_TOKEN is required for non-loopback listeners")
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(

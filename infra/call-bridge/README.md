@@ -2,6 +2,8 @@
 
 > whale-io 基础设施之一（原独立实验仓已并入本目录）。Android 包名 `com.nova.fakecall` 及设备 / 服务器部署路径为代码标识，保持不变。
 
+> **归档兼容目录，不是新部署入口。** 手机 / VoIP / 音频桥唯一维护与部署入口为 [`whale-mobile`](https://github.com/amwangfan/whale-mobile)。下述脚本、构建与运维步骤仅作历史参考；本仓仅保留兼容与必要安全回补。
+
 > **实验项目，非官方。** 凭据与密钥请自行准备；本目录不含 Token、keystore、APK 或录音。
 
 自管 Telecom `ConnectionService` + 全屏来电 UI + 接通后 PCM 双向桥（默认端口 **18799**）。不插卡、不刷机。
@@ -10,6 +12,7 @@
 
 - `secrets/` 不入库（仅 `.gitkeep` + 说明）；用环境变量 `SIGNAL_TOKEN` / `DASHSCOPE_API_KEY` / `AGENTSCOPE_API_KEY`，或本机自建 token 文件。
 - `debug.keystore` 不入库；构建前自行生成（见下方）。
+- 两个历史 ring hub 入口使用相同鉴权：仅接受 `Authorization: Bearer <SIGNAL_TOKEN>` 或 `X-Ring-Token`，不接受 URL query / JSON body 中的 token。空 token 无法授权来电、挂断和设备查询；非 loopback 监听未配 token 时拒绝启动。loopback 空 token 仅保留历史 poll / wait / WS 兼容行为，不应对外暴露。
 - 文档中的主机地址均为占位符：`<PUBLIC_IP>`、`<TAILSCALE_IP>`、`<SSH_PORT>`。保留本机默认端口号（如 18799）。
 
 ## 设备路径（机上）

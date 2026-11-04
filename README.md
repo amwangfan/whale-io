@@ -28,21 +28,24 @@
 - **Turbo-IO**（PhoneBridge、云推送上镜、轻量 HUD）：上游 <https://github.com/Turbo1123/Turbo-IO>。本地对它的改动另行管理，不并入本仓。
 - **眼镜固件**：暂停；无书面说明不刷。
 
+## 维护与部署入口
+
+**[`whale-mobile`](https://github.com/amwangfan/whale-mobile) 是手机 / VoIP / 音频桥唯一维护与部署入口**；请按该仓 README 的当前流程开发、构建与部署。本仓 `infra/` 为归档兼容副本，仅供历史方案查阅与必要安全回补，不作为新部署来源。智能层仍独立维护于 whale-core。
+
 ## 快速开始
 
+- 手机 / VoIP / 音频桥：从 [`whale-mobile README`](https://github.com/amwangfan/whale-mobile#readme) 开始，不使用本仓旧 `infra/` 启动或构建脚本。
+- 智能层：克隆公开仓本地跑测试（不连设备 / 网络 / 密钥）：
+
 ```bash
-# 智能层：克隆公开仓本地跑测试（不连设备 / 网络 / 密钥）
 git clone https://github.com/amwangfan/whale-core.git
 cd whale-core && uv sync --extra dev && uv run pytest -q
+```
 
-# 音频桥（开发机）+ 手机 USB 反向转发
-cd infra/call-bridge
-./audio-bridge/start.sh
-adb reverse tcp:18799 tcp:18799
+本仓安全回归可独立离线运行（不导入真实配置、不连接设备或外部服务）：
 
-# 前台监测 App（需自备 JDK 17 与 Android SDK）
-cd infra/fg-monitor
-JAVA_HOME=<JDK17_PATH> ANDROID_HOME=<ANDROID_SDK_PATH> ./scripts/build.sh
+```bash
+python3 tests/test_ring_hub_security.py -v
 ```
 
 云推送上镜的 HTTPS 约定与联调清单见 [`docs/cloud-push.md`](docs/cloud-push.md)（域名示例 `https://rayneo.wangfanlab.com/turbo`）。
