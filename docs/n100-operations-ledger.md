@@ -160,3 +160,10 @@ QQ 升级会更换 `major.node`（subAppId 锚）与本地库结构，**必须�
 - 仍缺：Magic8 正式图库；更广「做 xxx」复杂任务仍回落既有编排（本轮只闭环结果图类）。
 
 
+
+### 结果图可读白底卡片（2026-11-05 14:48 Asia/Shanghai）
+- whale-core `1c88cc6`（已推公开仓 `amwangfan/whale-core` main）：`life/do_request.make_simple_result_png`
+  改为白底可读卡片（标题/摘要/Asia/Shanghai 时间/少量信息；PIL + 文泉驿/Noto 字体候选；无 PIL 时白底灰线兜底），
+  去掉纯蓝占位块。N100 `/opt/whale/whale-core` tip 与远端一致；diff 脱敏扫描无 secrets。
+- 推送路径：N100→GitHub HTTPS TLS 失败，经 box bundle 中继 `5c2b262..1c88cc6` 推送成功。
+- 未动 nt_helper（生产 pin 仍为 `nt-helper-20261029-550ce33`）。
