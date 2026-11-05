@@ -149,3 +149,14 @@ QQ 升级会更换 `major.node`（subAppId 锚）与本地库结构，**必须�
   （现有 companion/工具链 + 投递路由已通；复杂任务仍靠既有意图规划）。
 - 勿再升 nt_helper 坏版；生产 pin=`nt-helper-20261029-550ce33`。
 
+### Owner「做 xxx」意图短路 + ResultDelivery（2026-11-05 14:27 Asia/Shanghai）
+- whale-core `5c2b262`：`life/do_request` 规则识别「做一张简单结果图发我」等 → 本地 PNG + 摘要 → ResultDelivery；
+  QQ owner **仅 private:** 短路（live_auto 才注入投递器；群不走）；glasses companion_chat 同款；
+  runner 见 `delivered_via=result_delivery` 只发短确认。
+- 文件：`src/whale_core/life/do_request.py`、`qq_workflow.py`、`api/glasses.py`、`examples/qq_live_workflow.py`、
+  `scripts/smoke_do_request.py`、`tests/test_do_request.py`。
+- 冒烟（N100）：`smoke_do_request.py` 与 workflow `handle_owner_event` 均 `qq_c2c` 成功；
+  privateSequence 450–451（脚本）/ workflow 再投一轮；nt_helper pin 仍为 `nt-helper-20261029-550ce33`（未升坏版）。
+- 仍缺：Magic8 正式图库；更广「做 xxx」复杂任务仍回落既有编排（本轮只闭环结果图类）。
+
+
