@@ -138,3 +138,14 @@ QQ 升级会更换 `major.node`（subAppId 锚）与本地库结构，**必须�
 - [ ] **2026-11-26 前必做**：SOP B2（nt_helper 到期；Windows 侧会话已挂 11-19 提醒，N100 侧也可自建 weekly timer 双保险）；
 - [ ] 东京云（aliyun-tokyo）角色 = 门面/哨兵，**永不部署 QQ 协议侧**；待用户关停 ouruestc 释放内存后，另行下达看门狗+异地备份任务书（与本账本无关，勿抢跑）；
 - [ ] Windows 侧已退役（runner 停止、WeQ 桌面关闭），仅保留为回退路径与 whaleio 构建机——N100 不需要维护它。
+
+### ResultDelivery MVP + 发送加固（2026-11-05 14:20 Asia/Shanghai）
+- whale-core `177d31d`：ResultDelivery（QQ online→owner 私聊；offline→phone-gallery stub+ADB 探测）；
+  weq_send 成功门闩 groupSequence/privateSequence>0；glasses `/v1/result/deliver` + chat `deliverResult`；
+  `scripts/check-nt-helper-pin.sh` 黑名单坏版 `nt-helper-20261105-02c56a4`（md5 faf67f78…）。
+- 冒烟（N100）：`smoke_result_delivery.py` 与 `/v1/result/deliver` 均 `qq_c2c` 成功，
+  privateSequence 446–449；`--force-offline` 落盘 `/opt/whale/state/phone-gallery-staging/`（adb-missing）。
+- 仍缺：Magic8 图库正式 API / whale-mobile 注入面；QQ「做xxx」全链路未改 runner 意图层
+  （现有 companion/工具链 + 投递路由已通；复杂任务仍靠既有意图规划）。
+- 勿再升 nt_helper 坏版；生产 pin=`nt-helper-20261029-550ce33`。
+
