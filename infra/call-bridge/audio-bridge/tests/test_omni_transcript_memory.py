@@ -150,12 +150,70 @@ def test_agent_mode_does_not_allocate_unused_memory_worker(monkeypatch, tmp_path
 
 def test_selected_persona_card_is_applied_to_omni_instructions():
     from whale_core.memory.store import InMemoryStore
-    from whale_core.ui.persona_cards import switch_card
+    from whale_core.ui.persona_cards import import_external_card, switch_card
+    from whale_core.ui.effective_persona import build_effective_persona
 
     store = InMemoryStore()
-    switch_card(store, "qunyou")
+    import_external_card(store, card_id="call-test", title="通话人格",
+                         prompt_text="喜欢鲸鱼和星空，说话自然。")
+    switch_card(store, "call-test")
     instructions = server.append_persona_card_instructions("base omni instructions", store)
     assert instructions.startswith("base omni instructions")
-    assert "短句像打字" in instructions
-    assert "不泄露密钥" in instructions
-    assert "权限、频控与审批由策略层管理" in instructions
+    assert build_effective_persona(store).model_context in instructions
+    assert "喜欢鲸鱼和星空" in instructions
+    assert "Global constraints" not in instructions
+
+
+def test_no_selected_persona_preserves_omni_instructions():
+    from whale_core.memory.store import InMemoryStore
+
+    assert server.append_persona_card_instructions(
+        "base omni instructions", InMemoryStore()) == "base omni instructions"
+
+
+def test_structured_persona_fields_reach_omni_instructions():
+    from whale_core.memory.store import InMemoryStore
+    from whale_core.ui.persona_cards import PersonaCard, switch_card
+
+    store = InMemoryStore()
+    card = PersonaCard(card_id="call-structured", title="结构人格", name="鲸鲸",
+                       summary="住在海边", temperament="好奇",
+                       relationship_style="一起探索", example_dialogue="去看看那片海吧")
+    store.put("persona:card:" + card.card_id, card.as_dict())
+    switch_card(store, card.card_id)
+    instructions = server.append_persona_card_instructions("base", store)
+    for value in ("鲸鲸", "住在海边", "好奇", "一起探索", "去看看那片海吧"):
+        assert value in instructions
+
+
+def test_missing_active_card_preserves_omni_instructions():
+    from whale_core.memory.store import InMemoryStore
+
+    store = InMemoryStore()
+    store.put("persona:active_card", {"card_id": "deleted"})
+    assert server.append_persona_card_instructions("base", store) == "base"
+
+
+def test_unavailable_persona_store_preserves_omni_instructions():
+    class UnavailableStore:
+        def get(self, _key):
+            raise OSError("offline store")
+
+    assert server.append_persona_card_instructions("base", UnavailableStore()) == "base"
+
+
+def test_tts_metadata_does_not_enter_omni_instructions():
+    from whale_core.memory.store import InMemoryStore
+    from whale_core.ui.persona_cards import PersonaCard, switch_card
+
+    store = InMemoryStore()
+    card = PersonaCard(card_id="call-voice", title="voice", name="鲸鲸",
+                       voice_hint="voice-only-marker", timbre_hint="timbre-only-marker",
+                       speaking_rate=1.37)
+    store.put("persona:card:" + card.card_id, card.as_dict())
+    switch_card(store, card.card_id)
+    instructions = server.append_persona_card_instructions("base", store)
+    assert "鲸鲸" in instructions
+    assert "voice-only-marker" not in instructions
+    assert "timbre-only-marker" not in instructions
+    assert "1.37" not in instructions
