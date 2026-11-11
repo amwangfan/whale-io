@@ -49,28 +49,21 @@ from bridge_tools import (
 def append_persona_card_instructions(base_instructions: str, store=None) -> str:
     """Append the selected Whale persona to Omni instructions.
 
-    If the shared SQLite store is configured, imported cards and the persisted
-    selection are available. Without it, built-in cards can still be selected
-    with WHALE_PERSONA_CARD. Failure is non-fatal: keep the existing prompt.
+    If the shared SQLite store is configured, use the same effective persona
+    rendering as text conversations. No selected card leaves the base unchanged.
     """
     try:
-        core_src = Path(__file__).resolve().parents[3] / "whale-core" / "src"
+        core_src = Path(__file__).resolve().parents[4] / "whale-core" / "src"
         if core_src.is_dir() and str(core_src) not in sys.path:
             sys.path.insert(0, str(core_src))
         from whale_core.memory.store import InMemoryStore
-        from whale_core.ui.persona_cards import active_card
+        from whale_core.ui.effective_persona import build_effective_persona
 
         selected_store = store if store is not None else InMemoryStore()
-        card = active_card(selected_store)
-        persona = card.render_persona()
-        constraints = "\n".join(f"- {rule}" for rule in persona.taboos)
-        addition = (
-            "\n\n[Whale persona card: expression settings only; no permission changes]\n"
-            + persona.system_preamble
-            + "\nGlobal constraints (not overridable by the card):\n"
-            + constraints
-        )
-        return base_instructions.rstrip() + addition
+        persona = build_effective_persona(selected_store).model_context
+        if not persona:
+            return base_instructions
+        return base_instructions.rstrip() + "\n\n[Whale persona]\n" + persona
     except Exception as exc:
         # Do not break a live call if the optional shared persona store is unavailable.
         print(f"[omni] persona card unavailable: {type(exc).__name__}", flush=True)
