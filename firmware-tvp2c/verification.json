@@ -1,0 +1,41 @@
+{
+  "scope": "TVP2C firmware tree: 611-line module source + TVP2 (1.0.5.5 baseline) reference pipeline",
+  "tvp2c611Line": {
+    "sourceState": "working line as of 2026-11-20 (includes CAPS advertisement and ANIM_PLAY busy-semantics fixes)",
+    "verifiedBy": "private build harness + on-device acceptance",
+    "hardwareAcceptanceDate": "2026-11-20",
+    "hardwareSixStepPass": true,
+    "telemetry": {
+      "experiment": "exp-export4",
+      "running": 1,
+      "tickMs": 16,
+      "frameSkipRatioApprox": 0.02
+    },
+    "moduleLevelVerification": "unicorn emulation + host-side compile tests",
+    "goldenReproducibleFromThisRepo": false,
+    "goldenReproducibleNote": "The 611-line base package contains compliance-sensitive pre-steps that are not published; no pin manifest for the 611 line is shipped. See README."
+  },
+  "tvp2ReferencePipeline": {
+    "baseline": "1.0.5.5",
+    "note": "Record of the TVP2 reference pipeline (2026-10-23 candidate). Applies to the TVP2 source tree published at Turbo1123/Turbo-IO, not to the 611-line src/ in this directory.",
+    "passed": true,
+    "APBytes": 7435336,
+    "APGrowthBytes": 1024,
+    "unchangedStockPayloads": 14,
+    "patchSites": 40,
+    "changedSources": [
+      "video-player-v1/native.inc",
+      "video-player-v1/player.h",
+      "video-player-v1/player.c"
+    ],
+    "maxPlayerAllocation": 239424,
+    "sourcePixels": [540, 220],
+    "archiveSHA256": "154f0f8e68a69b8fb93f869e423081ee43969bf09c5174e8dbeac192c1047c11",
+    "hardwareTested": false,
+    "flashAuthorized": false,
+    "userReportedFlashAndProjectionPassed": true,
+    "userAcceptanceDate": "2026-10-23",
+    "fullHardwareMatrixVerified": false,
+    "privateMergedIPAPublished": false
+  }
+}

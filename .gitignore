@@ -1,0 +1,26 @@
+# ---- 硬挡：构建/发布产物 ----
+*.apk
+*.aab
+*.zip
+*.bin
+*.pkl
+**/build/
+**/__pycache__/
+
+# ---- 硬挡：密钥与凭据 ----
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+key.properties
+local.properties
+.env
+.env.*
+
+# ---- 硬挡：测试入口令牌资产（代码只引用文件名，资产永不入库）----
+test-entry-token.txt
+
+# ---- 常规 ----
+.DS_Store
+Thumbs.db
