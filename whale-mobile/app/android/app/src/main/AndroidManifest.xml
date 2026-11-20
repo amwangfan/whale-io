@@ -1,0 +1,214 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 端云通信必需（所有构建类型） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 通知模块（phone.notification.post）：Android 13+ 运行时权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- VoIP 模块（phone.call.ring，B4）：自管 Telecom 来电 + PCM 音频桥。
+         MANAGE_OWN_CALLS 为 normal 级（声明即授予）；RECORD_AUDIO/READ_PHONE_STATE
+         为运行时权限（接听 PCM 桥采音需 RECORD_AUDIO）。 -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- API 34+：phoneCall 类型前台服务（Telecom 通话）；dataSync 供 legacy SignalService -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- contracts/v2 §12.2：MediaProjection 内置录制（Root 版）前台服务类型（API 34+ 必需） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <!-- BG-02：开机后按策略恢复连接（尊重暂停/撤销；Android 15 不允许开机拉起
+         dataSync 前台服务，届时降级为进程内连接，不绕过） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:label="Whale"
+        android:name=".WhaleApp"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <!-- ==================== 节点服务（BG-01，WSS 长连前台载体） ==================== -->
+        <!-- contracts/v2 运行时前台载体（NodeRuntimeV2；v1 栈已下线，本服务为唯一
+             前台载体）。WSS/设备身份/上行队列归 Application 级 NodeRuntimeV2 单例
+             持有；仅由前台场景显式启动（UI connectV2 / 用户开关），不做后台隐式
+             拉起；Android 15 dataSync 时长受限时按系统降级，不绕过。 -->
+        <service
+            android:name="com.wangfanlab.whale.runtime.v2.NodeServiceV2"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- BG-02：开机恢复入口（系统保护广播，无需运行时权限；v2 面） -->
+        <receiver
+            android:name="com.wangfanlab.whale.runtime.v2.BootReceiverV2"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ==================== VoIP 模块（B4，自管 Telecom 来电） ==================== -->
+        <!-- 来电入口 = WSS call.invite / action.request phone.call.ring；
+             BootstrapActivity（设置 UI）与 RingReceiver（广播触发）不并入宿主。 -->
+        <activity
+            android:name="com.wangfanlab.whale.voip.IncomingCallActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name="com.wangfanlab.whale.voip.InCallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:screenOrientation="portrait" />
+
+        <service
+            android:name="com.wangfanlab.whale.voip.FakeConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- 拨号→VoIP 重定向（HANDOFF 二节）：原厂拨号器发起的呼叫经 Telecom 咨询
+             本服务，重定向到 whale managed 承接账户（whale-in-managed）由 VoIP 承接。
+             测试期启用（披露留痕）：
+               adb shell cmd telecom set-test-call-redirection-app com.wangfanlab.whale
+             正式启用（本阶段不做，待 Tob/用户批）：
+               RoleManager.ROLE_CALL_REDIRECTION 用户授权。
+             API 29+ 才存在该类；更低版本系统永不绑定，类不会被加载。 -->
+        <service
+            android:name="com.wangfanlab.whale.voip.WhaleCallRedirectionService"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- legacy 信令长轮询（默认不启用，SignalPrefs.isEnabled 宿主默认 false；
+             保留代码供调试，无 BootReceiver——宿主开机不自动恢复长轮询） -->
+        <service
+            android:name="com.wangfanlab.whale.voip.SignalService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- ==================== 可信确认（AUTH-01，Issue #15） ==================== -->
+        <activity
+            android:name="com.wangfanlab.whale.modules.authconfirm.ConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+
+        <!-- ==================== 影子采集模块（SM-01，Issue #8；默认关） ==================== -->
+        <!-- 影子模式：只统计截图成功率/延迟/重复率，不保存截图、不 OCR；
+             与独立 ScreenMemo 采集互斥（conflict_standalone_screenmemo 自动跳过）。 -->
+        <service
+            android:name="com.wangfanlab.whale.modules.capture.ShadowCaptureService"
+            android:label="Whale 屏幕感知与操控"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/whale_capture_accessibility" />
+        </service>
+
+        <!-- ==================== 屏幕录制模块（contracts/v2 §12.2，Root 版能力 device.screen.record） ==================== -->
+        <!-- MediaProjection 录制前台载体：可见通知 + 通知「停止」入口；
+             能力注册按构建变体门控（daily 构建不注册 handler），服务本身两变体声明。 -->
+        <service
+            android:name="com.wangfanlab.whale.modules.recording.RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- ==================== 原生通知模块 v2（N0，notification2） ==================== -->
+        <!-- 通知按钮/点击/划掉入口。exported=false：只收本应用 PendingIntent 的显式广播；
+             无 intent-filter，Flutter/Service 不运行时系统也能按显式组件拉起进程处理。 -->
+        <receiver
+            android:name="com.wangfanlab.whale.modules.notification2.NotificationActionReceiver"
+            android:exported="false" />
+
+        <!-- ==================== 通知监听模块（B3 前半，phone.notification.read） ==================== -->
+        <!-- 独立可选模块（whale_modules/notification_read_enabled 默认 false）；
+             特殊访问权限未授予时系统不绑定本服务，天然 fail-closed。
+             脱敏纪律：仅取 package/postedTime/category/标题（≤80 字符），绝不读正文。 -->
+        <service
+            android:name="com.wangfanlab.whale.modules.notificationread.WhaleNotificationListenerService"
+            android:label="@string/whale_notification_listener_label"
+            android:description="@string/whale_notification_listener_description"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 无 Root app.list / app.launch 仅查询有桌面入口的 App，不申请 QUERY_ALL_PACKAGES。 -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- safe_action open_deeplink：http(s) 处理器可见性（resolveActivity 校验用；
+             带 LAUNCHER 入口的 App 系统默认可见，launch_app 无需额外声明） -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
+</manifest>

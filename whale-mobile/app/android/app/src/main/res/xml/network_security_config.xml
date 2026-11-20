@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release 默认仅允许 TLS。Debug 通过 src/debug/res/xml 的同名资源覆盖，
+     允许开发环境 ws:// 联调；不在仓库硬编码个人 tailnet 地址。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
